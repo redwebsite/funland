@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSystemInfo();
   loadRegInfo();
   updateUserUi();
-  initQrLogin();
+  checkUserDriveStatus();
 });
 
 // 1. 获取系统信息
@@ -55,21 +55,23 @@ async function loadRegInfo() {
     if (json.success) {
       cachedRegInfo = json.data;
       const badge = document.getElementById('navRegBadge');
-      if (!cachedRegInfo.isSwitchOpen) {
-        badge.innerText = '⛔ 注册已关闭';
-        badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
-        badge.style.color = '#f87171';
-        badge.style.background = 'rgba(239, 68, 68, 0.15)';
-      } else if (cachedRegInfo.remainingSlots <= 0) {
-        badge.innerText = `⚠️ 名额已满 (${cachedRegInfo.maxUsersLimit}人)`;
-        badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
-        badge.style.color = '#fbbf24';
-        badge.style.background = 'rgba(245, 158, 11, 0.15)';
-      } else {
-        badge.innerText = `🟢 开放注册 (${cachedRegInfo.remainingSlots}/${cachedRegInfo.maxUsersLimit})`;
-        badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-        badge.style.color = '#34d399';
-        badge.style.background = 'rgba(16, 185, 129, 0.15)';
+      if (badge) {
+        if (!cachedRegInfo.isSwitchOpen) {
+          badge.innerText = '⛔ 注册已关闭';
+          badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+          badge.style.color = '#f87171';
+          badge.style.background = 'rgba(239, 68, 68, 0.15)';
+        } else if (cachedRegInfo.remainingSlots <= 0) {
+          badge.innerText = `⚠️ 名额已满 (${cachedRegInfo.maxUsersLimit}人)`;
+          badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+          badge.style.color = '#fbbf24';
+          badge.style.background = 'rgba(245, 158, 11, 0.15)';
+        } else {
+          badge.innerText = `🟢 开放注册 (${cachedRegInfo.remainingSlots}/${cachedRegInfo.maxUsersLimit})`;
+          badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+          badge.style.color = '#34d399';
+          badge.style.background = 'rgba(16, 185, 129, 0.15)';
+        }
       }
 
       if (document.getElementById('modalQuotaSlots')) {
@@ -82,6 +84,7 @@ async function loadRegInfo() {
 // 用户状态显示更新
 function updateUserUi() {
   const btn = document.getElementById('btnUserAuth');
+  if (!btn) return;
   if (currentUser) {
     btn.innerHTML = `<span>👤 ${escapeHtml(currentUser)}</span> <span onclick="logoutUser(event)" style="margin-left: 6px; opacity: 0.75;" title="退出登录">退出</span>`;
     btn.style.background = 'rgba(99, 102, 241, 0.3)';
@@ -98,6 +101,7 @@ function logoutUser(e) {
   localStorage.removeItem('funland_user');
   currentUser = null;
   updateUserUi();
+  checkUserDriveStatus();
   alert('已退出登录');
 }
 
@@ -107,12 +111,14 @@ function openAuthModal() {
     alert(`当前已登录为: ${currentUser}`);
     return;
   }
-  document.getElementById('authModal').style.display = 'flex';
+  const modal = document.getElementById('authModal');
+  if (modal) modal.style.display = 'flex';
   switchAuthTab('login');
 }
 
 function closeAuthModal() {
-  document.getElementById('authModal').style.display = 'none';
+  const modal = document.getElementById('authModal');
+  if (modal) modal.style.display = 'none';
 }
 
 function switchAuthTab(mode) {
@@ -121,22 +127,34 @@ function switchAuthTab(mode) {
   const tabReg = document.getElementById('tabAuthReg');
   const quotaAlert = document.getElementById('regQuotaAlert');
   const submitBtn = document.getElementById('btnAuthSubmit');
+  const regClosedSection = document.getElementById('regClosedSection');
+  const authFieldsGroup = document.getElementById('authFieldsGroup');
 
   if (mode === 'login') {
-    tabLogin.classList.add('active');
-    tabReg.classList.remove('active');
-    quotaAlert.style.display = 'none';
-    submitBtn.innerText = '立即登录';
+    if (tabLogin) tabLogin.classList.add('active');
+    if (tabReg) tabReg.classList.remove('active');
+    if (quotaAlert) quotaAlert.style.display = 'none';
+    if (regClosedSection) regClosedSection.style.display = 'none';
+    if (authFieldsGroup) authFieldsGroup.style.display = 'block';
+    if (submitBtn) submitBtn.innerText = '立即登录';
   } else {
-    tabReg.classList.add('active');
-    tabLogin.classList.remove('active');
-    quotaAlert.style.display = 'block';
-    submitBtn.innerText = '立即注册';
+    if (tabReg) tabReg.classList.add('active');
+    if (tabLogin) tabLogin.classList.remove('active');
 
-    if (cachedRegInfo) {
-      document.getElementById('modalQuotaSlots').innerText = cachedRegInfo.remainingSlots;
-      if (!cachedRegInfo.allowed) {
-        alert(cachedRegInfo.statusText);
+    // 检查注册是否开放
+    const isRegOpen = cachedRegInfo ? cachedRegInfo.allowed : true;
+    if (!isRegOpen) {
+      // 注册已关闭状态
+      if (quotaAlert) quotaAlert.style.display = 'none';
+      if (authFieldsGroup) authFieldsGroup.style.display = 'none';
+      if (regClosedSection) regClosedSection.style.display = 'block';
+    } else {
+      if (regClosedSection) regClosedSection.style.display = 'none';
+      if (authFieldsGroup) authFieldsGroup.style.display = 'block';
+      if (quotaAlert) quotaAlert.style.display = 'block';
+      if (submitBtn) submitBtn.innerText = '立即注册';
+      if (cachedRegInfo && document.getElementById('modalQuotaSlots')) {
+        document.getElementById('modalQuotaSlots').innerText = cachedRegInfo.remainingSlots;
       }
     }
   }
@@ -163,6 +181,7 @@ async function handleAuthSubmit(e) {
       closeAuthModal();
       updateUserUi();
       loadRegInfo();
+      checkUserDriveStatus();
     } else {
       alert(json.error || '操作失败');
     }
@@ -171,7 +190,104 @@ async function handleAuthSubmit(e) {
   }
 }
 
-// 2. 扫码登录流程
+// 2. 115 网盘授权与秒存设置状态检查
+async function checkUserDriveStatus() {
+  const targetUser = currentUser || 'guest_user';
+  try {
+    const res = await fetch(`/api/user/status?username=${encodeURIComponent(targetUser)}`);
+    const json = await res.json();
+    if (json.success && json.bound) {
+      showDriveSettingsPanel(json);
+    } else {
+      showDriveAuthPanel();
+    }
+  } catch (e) {
+    showDriveAuthPanel();
+  }
+}
+
+function showDriveSettingsPanel(data) {
+  const boxAuth = document.getElementById('boxDriveAuth');
+  const boxSettings = document.getElementById('boxDriveSettings');
+  if (boxAuth) boxAuth.style.display = 'none';
+  if (boxSettings) {
+    boxSettings.style.display = 'flex';
+    const uidText = document.getElementById('driveUidDisplay');
+    if (uidText) {
+      const uidVal = data.uid || (data.data && data.data.userId) || '594679508';
+      uidText.innerText = `UID - ${uidVal}`;
+    }
+    const input = document.getElementById('driveSaveDirInput');
+    if (input) {
+      input.value = (data.saveDir || '/EmbyCache11').replace(/^\//, '');
+    }
+    const spaceEl = document.getElementById('driveSpaceQuota');
+    if (spaceEl && data.data && data.data.spaceTotal) {
+      spaceEl.innerText = `${data.data.spaceTotal} ≤`;
+    }
+  }
+}
+
+function showDriveAuthPanel() {
+  const boxAuth = document.getElementById('boxDriveAuth');
+  const boxSettings = document.getElementById('boxDriveSettings');
+  if (boxSettings) boxSettings.style.display = 'none';
+  if (boxAuth) {
+    boxAuth.style.display = 'block';
+    if (!qrSession) {
+      initQrLogin();
+    }
+  }
+}
+
+function toggleDriveEditMode(showEdit) {
+  const boxAuth = document.getElementById('boxDriveAuth');
+  const boxSettings = document.getElementById('boxDriveSettings');
+  const btnCancel = document.getElementById('btnCancelEditDrive');
+
+  if (showEdit) {
+    if (boxSettings) boxSettings.style.display = 'none';
+    if (boxAuth) boxAuth.style.display = 'block';
+    if (btnCancel) btnCancel.style.display = 'inline-block';
+    if (!qrSession) initQrLogin();
+  } else {
+    if (boxAuth) boxAuth.style.display = 'none';
+    if (boxSettings) boxSettings.style.display = 'flex';
+    if (btnCancel) btnCancel.style.display = 'none';
+  }
+}
+
+async function saveDriveSettings() {
+  const targetUser = currentUser || 'guest_user';
+  const input = document.getElementById('driveSaveDirInput');
+  const toast = document.getElementById('driveSaveToast');
+  let rawDir = input ? input.value.trim() : 'EmbyCache11';
+  if (!rawDir) rawDir = 'EmbyCache11';
+  const cleanDir = rawDir.startsWith('/') ? rawDir : '/' + rawDir;
+
+  try {
+    const res = await fetch('/api/user/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: targetUser, saveDir: cleanDir })
+    });
+    const json = await res.json();
+    if (json.success) {
+      if (input) input.value = cleanDir.replace(/^\//, '');
+      if (toast) {
+        toast.innerText = `✅ 秒存文件夹已保存为: ${cleanDir}`;
+        toast.style.display = 'block';
+        setTimeout(() => { toast.style.display = 'none'; }, 3000);
+      }
+    } else {
+      alert(json.error || '保存失败');
+    }
+  } catch (e) {
+    alert('保存异常: ' + e.message);
+  }
+}
+
+// 3. 扫码登录流程
 async function initQrLogin() {
   if (qrPollTimer) clearInterval(qrPollTimer);
 
@@ -180,9 +296,9 @@ async function initQrLogin() {
   const text = document.getElementById('qrStatusText');
   const img = document.getElementById('qrImg');
 
-  dot.innerText = '⏳';
-  text.innerText = '正在生成 115 扫码凭证...';
-  badge.className = 'qr-status-badge';
+  if (dot) dot.innerText = '⏳';
+  if (text) text.innerText = '正在生成 115 扫码凭证...';
+  if (badge) badge.className = 'qr-status-badge';
 
   try {
     const res = await fetch('/api/115/qrcode/token', { method: 'POST' });
@@ -190,17 +306,17 @@ async function initQrLogin() {
 
     if (json.success && json.qrDataUrl) {
       qrSession = json;
-      img.src = json.qrDataUrl;
-      dot.innerText = '📱';
-      text.innerText = '打开 115 App 扫一扫';
+      if (img) img.src = json.qrDataUrl;
+      if (dot) dot.innerText = '📱';
+      if (text) text.innerText = '打开 115 App 扫一扫';
 
       // 启动轮询 (每 2 秒一次)
       qrPollTimer = setInterval(pollQrStatus, 2000);
     } else {
-      text.innerText = '获取二维码失败: ' + (json.error || '上游超时');
+      if (text) text.innerText = '获取二维码失败: ' + (json.error || '上游超时');
     }
   } catch (err) {
-    text.innerText = '生成异常: ' + err.message;
+    if (text) text.innerText = '生成异常: ' + err.message;
   }
 }
 
@@ -217,21 +333,22 @@ async function pollQrStatus() {
     const json = await res.json();
 
     if (json.status === 'waiting') {
-      text.innerText = '打开 115 App 扫一扫';
+      if (text) text.innerText = '打开 115 App 扫一扫';
     } else if (json.status === 'scanned') {
-      dot.innerText = '📲';
-      text.innerText = '已扫码，请在手机端点击【确认登录】';
+      if (dot) dot.innerText = '📲';
+      if (text) text.innerText = '已扫码，请在手机端点击【确认登录】';
     } else if (json.status === 'confirmed') {
       clearInterval(qrPollTimer);
-      dot.innerText = '✅';
-      text.innerText = `授权成功！已绑定至用户: ${targetUser}`;
-      badge.className = 'qr-status-badge success';
-      document.getElementById('boundCard').style.display = 'block';
-      document.getElementById('boundUserInfo').innerText = `用户【${targetUser}】已完成 115 网盘授权，播放时将自动提取 115 满速原画直链。`;
+      if (dot) dot.innerText = '✅';
+      if (text) text.innerText = `授权成功！已绑定至用户: ${targetUser}`;
+      if (badge) badge.className = 'qr-status-badge success';
+      setTimeout(() => {
+        checkUserDriveStatus();
+      }, 1000);
     } else if (json.status === 'expired') {
       clearInterval(qrPollTimer);
-      dot.innerText = '❌';
-      text.innerText = '二维码已失效，点击刷新';
+      if (dot) dot.innerText = '❌';
+      if (text) text.innerText = '二维码已失效，点击刷新';
     }
   } catch (e) { }
 }
@@ -240,7 +357,7 @@ function refreshQrCode() {
   initQrLogin();
 }
 
-// 3. Cookie 手动绑定
+// 4. Cookie 手动绑定
 function switchBindTab(type) {
   const btnQr = document.getElementById('btnTabQr');
   const btnCookie = document.getElementById('btnTabCookie');
@@ -248,15 +365,15 @@ function switchBindTab(type) {
   const panelCookie = document.getElementById('panelCookie');
 
   if (type === 'qr') {
-    btnQr.classList.add('active');
-    btnCookie.classList.remove('active');
-    panelQr.style.display = 'block';
-    panelCookie.style.display = 'none';
+    if (btnQr) btnQr.classList.add('active');
+    if (btnCookie) btnCookie.classList.remove('active');
+    if (panelQr) panelQr.style.display = 'block';
+    if (panelCookie) panelCookie.style.display = 'none';
   } else {
-    btnCookie.classList.add('active');
-    btnQr.classList.remove('active');
-    panelQr.style.display = 'none';
-    panelCookie.style.display = 'block';
+    if (btnCookie) btnCookie.classList.add('active');
+    if (btnQr) btnQr.classList.remove('active');
+    if (panelQr) panelQr.style.display = 'none';
+    if (panelCookie) panelCookie.style.display = 'block';
   }
 }
 
@@ -277,8 +394,7 @@ async function submitManualCookie() {
     const json = await res.json();
     if (json.success) {
       alert(json.msg || '绑定成功！');
-      document.getElementById('boundCard').style.display = 'block';
-      document.getElementById('boundUserInfo').innerText = `用户【${targetUser}】已绑定 115 账号: ${json.data.username || '115账号'} (VIP到期: ${json.data.vipExpire || '未知'})`;
+      checkUserDriveStatus();
     } else {
       alert(json.error || '绑定失败，请检查 Cookie 完整性');
     }
@@ -286,9 +402,6 @@ async function submitManualCookie() {
     alert('网络异常: ' + e.message);
   }
 }
-
-// 4. 通用连接说明
-// 整合通用连接参数，适配全部 Emby 客户端 (Infuse / VidHub / Fileball / SenPlayer / 官方客户端)
 
 // 5. 复制地址
 function copyServerAddress() {
@@ -309,3 +422,17 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// 全局函数导出
+window.saveDriveSettings = saveDriveSettings;
+window.toggleDriveEditMode = toggleDriveEditMode;
+window.checkUserDriveStatus = checkUserDriveStatus;
+window.switchBindTab = switchBindTab;
+window.refreshQrCode = refreshQrCode;
+window.submitManualCookie = submitManualCookie;
+window.switchAuthTab = switchAuthTab;
+window.openAuthModal = openAuthModal;
+window.closeAuthModal = closeAuthModal;
+window.handleAuthSubmit = handleAuthSubmit;
+window.copyServerAddress = copyServerAddress;
+window.logoutUser = logoutUser;

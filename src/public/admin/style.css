@@ -536,3 +536,43 @@ body {
   font-size: 0.82rem;
   color: var(--text-muted);
 }
+
+.admin-login-card form {
+  width: 100%;
+}
+
+.admin-login-card .form-group {
+  width: 100%;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.admin-login-card .form-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.admin-login-card .form-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+  display: block;
+}
+
+.admin-login-card .form-input:focus {
+  border-color: var(--accent-primary);
+  background: rgba(15, 23, 42, 0.9);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+}

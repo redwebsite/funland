@@ -72,45 +72,84 @@
 
     <!-- 双列网格 -->
     <div class="portal-grid">
-      <!-- 模块 1: 115 网盘授权绑定 -->
-      <div class="glass-box">
-        <h2 class="box-title"><span>📱</span> 115 网盘快速授权</h2>
-        <p class="box-desc">使用 115 手机 App 扫码登录，或手动粘贴 Cookie 凭据完成绑定</p>
+      <!-- 模块 1: 115 网盘授权绑定与秒存设置 -->
+      <div class="glass-box" id="card115Container">
+        <!-- 状态 A: 115 授权绑定面板 (Image 1) -->
+        <div id="boxDriveAuth">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h2 class="box-title" style="margin-bottom: 0;"><span>📱</span> 115 网盘快速授权</h2>
+            <button id="btnCancelEditDrive" onclick="toggleDriveEditMode(false)" style="display: none; background: rgba(255,255,255,0.08); border: 1px solid var(--border-color); color: var(--text-muted); font-size: 0.8rem; padding: 4px 10px; border-radius: 6px; cursor: pointer;">
+              返回网盘设置
+            </button>
+          </div>
+          <p class="box-desc">使用 115 手机 App 扫码登录，或手动粘贴 Cookie 凭据完成绑定</p>
 
-        <div class="sub-tabs">
-          <button class="sub-tab-btn active" id="btnTabQr" onclick="switchBindTab('qr')">扫码登录</button>
-          <button class="sub-tab-btn" id="btnTabCookie" onclick="switchBindTab('cookie')">Cookie 导入</button>
+          <div class="sub-tabs">
+            <button class="sub-tab-btn active" id="btnTabQr" onclick="switchBindTab('qr')">扫码登录</button>
+            <button class="sub-tab-btn" id="btnTabCookie" onclick="switchBindTab('cookie')">Cookie 导入</button>
+          </div>
+
+          <!-- 扫码面板 -->
+          <div id="panelQr">
+            <div class="qr-container">
+              <img id="qrImg" class="qr-image" src="" alt="115 扫码二维码">
+              <div id="qrStatusBadge" class="qr-status-badge">
+                <span id="qrStatusDot">⏳</span>
+                <span id="qrStatusText">正在获取 115 扫码凭证...</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary" style="width: 100%; margin-top: 14px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: #fff; cursor: pointer;" onclick="refreshQrCode()">
+              🔄 刷新二维码
+            </button>
+          </div>
+
+          <!-- Cookie 导入面板 -->
+          <div id="panelCookie" style="display: none; padding-top: 10px;">
+            <div style="margin-bottom: 14px;">
+              <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">115 Cookie (必须包含 UID, CID, SEID)</label>
+              <textarea id="manualCookie" rows="5" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff; font-family: monospace; font-size: 0.85rem;" placeholder="UID=...; CID=...; SEID=..."></textarea>
+            </div>
+            <button onclick="submitManualCookie()" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--gradient-hero); border: none; color: #fff; font-weight: 600; cursor: pointer;">
+              💾 绑定此 Cookie
+            </button>
+          </div>
         </div>
 
-        <!-- 扫码面板 -->
-        <div id="panelQr">
-          <div class="qr-container">
-            <img id="qrImg" class="qr-image" src="" alt="115 扫码二维码">
-            <div id="qrStatusBadge" class="qr-status-badge">
-              <span id="qrStatusDot">⏳</span>
-              <span id="qrStatusText">正在获取 115 扫码凭证...</span>
+        <!-- 状态 B: 已绑定网盘设置面板 (Image 2) -->
+        <div id="boxDriveSettings" class="drive-settings-panel" style="display: none;">
+          <div class="drive-settings-header">
+            <h2 class="box-title" style="margin-bottom: 0;"><span>⚙️</span> 网盘设置</h2>
+            <button class="btn-save-disk" onclick="saveDriveSettings()" title="保存秒存文件夹配置">
+              💾
+            </button>
+          </div>
+
+          <!-- 账号 UID 保护卡片 -->
+          <div class="drive-account-card">
+            <div class="drive-account-info">
+              <div class="drive-shield-icon">🛡️</div>
+              <div class="drive-account-text">
+                <span class="drive-uid-text" id="driveUidDisplay">UID - 加载中...</span>
+                <span class="drive-cookie-badge">Cookie已深度加密隐藏</span>
+              </div>
+            </div>
+            <button class="btn-drive-edit" onclick="toggleDriveEditMode(true)">编辑</button>
+          </div>
+
+          <!-- 秒存文件夹配置 (带浮动 Label Outline) -->
+          <div class="drive-field-group">
+            <label class="drive-field-label">秒存文件夹</label>
+            <div class="drive-input-wrap">
+              <span class="drive-folder-slash">/</span>
+              <input type="text" id="driveSaveDirInput" class="drive-folder-input" value="EmbyCache11" placeholder="EmbyCache" onkeydown="if(event.key==='Enter') saveDriveSettings()">
+              <div class="drive-quota-hint">
+                <span id="driveSpaceQuota">5 TB ≤</span>
+                <span style="color: #ef4444;" title="秒存空间上限限制">🚫</span>
+              </div>
             </div>
           </div>
-          <button class="btn btn-secondary" style="width: 100%; margin-top: 14px; padding: 10px; border-radius: 10px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-color); color: #fff; cursor: pointer;" onclick="refreshQrCode()">
-            🔄 刷新二维码
-          </button>
-        </div>
 
-        <!-- Cookie 导入面板 -->
-        <div id="panelCookie" style="display: none; padding-top: 10px;">
-          <div style="margin-bottom: 14px;">
-            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">115 Cookie (必须包含 UID, CID, SEID)</label>
-            <textarea id="manualCookie" rows="5" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff; font-family: monospace; font-size: 0.85rem;" placeholder="UID=...; CID=...; SEID=..."></textarea>
-          </div>
-          <button onclick="submitManualCookie()" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--gradient-hero); border: none; color: #fff; font-weight: 600; cursor: pointer;">
-            💾 绑定此 Cookie
-          </button>
-        </div>
-
-        <!-- 绑定成功卡片 -->
-        <div id="boundCard" style="display: none; margin-top: 20px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 16px;">
-          <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;">✅ 已成功绑定 115 账号</div>
-          <div style="font-size: 0.85rem; color: var(--text-muted);" id="boundUserInfo">用户名: 加载中...</div>
+          <div id="driveSaveToast" style="display: none; font-size: 0.82rem; color: #34d399; margin-top: 4px; padding: 6px 12px; border-radius: 6px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25);"></div>
         </div>
       </div>
 
@@ -200,7 +239,7 @@
   </footer>
 
   <!-- 用户登录与自主注册弹窗 -->
-  <div id="authModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 999; align-items: center; justify-content: center;">
+  <div id="authModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(12px); z-index: 999; align-items: center; justify-content: center; padding: 20px;">
     <div style="background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-color); border-radius: 20px; padding: 28px; width: 100%; max-width: 400px; box-shadow: var(--shadow-card); position: relative;">
       <button onclick="closeAuthModal()" style="position: absolute; right: 20px; top: 18px; background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">✕</button>
 
@@ -213,20 +252,34 @@
         💡 剩余注册名额: <strong id="modalQuotaSlots">200</strong> 人
       </div>
 
-      <form id="authForm" onsubmit="handleAuthSubmit(event)">
-        <div style="margin-bottom: 14px;">
-          <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">用户名</label>
-          <input type="text" id="authUsername" required minlength="3" placeholder="至少 3 位字母或数字" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff;">
-        </div>
-
-        <div style="margin-bottom: 18px;">
-          <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">密码</label>
-          <input type="password" id="authPassword" required minlength="6" placeholder="至少 6 位密码" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff;">
-        </div>
-
-        <button type="submit" id="btnAuthSubmit" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--gradient-hero); border: none; color: #fff; font-weight: 700; cursor: pointer; font-size: 0.95rem;">
-          立即登录
+      <!-- 注册已关闭状态提示 -->
+      <div id="regClosedSection" style="display: none; text-align: center; padding: 18px 10px 10px 10px;">
+        <div style="font-size: 2.5rem; margin-bottom: 10px;">🔒</div>
+        <div style="font-size: 1.15rem; font-weight: 700; color: #f87171; margin-bottom: 8px;">注册已关闭</div>
+        <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px;">
+          当前管理员已暂停新用户自主注册。<br>已有账号的用户请直接点击上方「用户登录」登录使用。
+        </p>
+        <button type="button" onclick="switchAuthTab('login')" style="width: 100%; padding: 11px; border-radius: 10px; background: rgba(255,255,255,0.08); border: 1px solid var(--border-color); color: #fff; cursor: pointer; font-size: 0.9rem; font-weight: 600;">
+          返回账号登录
         </button>
+      </div>
+
+      <form id="authForm" onsubmit="handleAuthSubmit(event)">
+        <div id="authFieldsGroup">
+          <div style="margin-bottom: 14px; width: 100%;">
+            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">用户名</label>
+            <input type="text" id="authUsername" required minlength="3" placeholder="至少 3 位字母或数字" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; color: #fff; font-size: 0.92rem; outline: none;">
+          </div>
+
+          <div style="margin-bottom: 20px; width: 100%;">
+            <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">密码</label>
+            <input type="password" id="authPassword" required minlength="6" placeholder="至少 6 位密码" style="width: 100%; box-sizing: border-box; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; color: #fff; font-size: 0.92rem; outline: none;">
+          </div>
+
+          <button type="submit" id="btnAuthSubmit" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--gradient-hero); border: none; color: #fff; font-weight: 700; cursor: pointer; font-size: 0.95rem;">
+            立即登录
+          </button>
+        </div>
       </form>
     </div>
   </div>

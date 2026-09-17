@@ -53,12 +53,11 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 6px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 8px;">
         <span id="currentAdminBadge" style="font-weight: 600; color: #818cf8; font-size: 0.82rem;">👤 admin</span>
-        <button onclick="handleAdminLogout()" style="background: none; border: none; color: #f87171; cursor: pointer; font-size: 0.78rem;" title="退出登录">退出</button>
+        <button onclick="handleAdminLogout()" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; cursor: pointer; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px; transition: all 0.2s;" title="退出登录">退出</button>
       </div>
-      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-        <span>服务状态</span>
+      <div style="display: flex; align-items: center; justify-content: flex-start; width: 100%;">
         <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
       </div>
     </div>
@@ -387,11 +386,11 @@
       <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
         <div class="form-group" style="margin-bottom: 16px;">
           <label class="form-label" style="margin-bottom: 6px;">管理员账号</label>
-          <input type="text" id="adminUser" required placeholder="admin" autocomplete="username">
+          <input type="text" id="adminUser" class="form-input" required placeholder="admin" autocomplete="username">
         </div>
         <div class="form-group" style="margin-bottom: 20px;">
           <label class="form-label" style="margin-bottom: 6px;">管理员密码</label>
-          <input type="password" id="adminPass" required placeholder="••••••••" autocomplete="current-password">
+          <input type="password" id="adminPass" class="form-input" required placeholder="••••••••" autocomplete="current-password">
         </div>
         <div id="loginErrorAlert" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171;"></div>
         <button type="submit" id="btnAdminLogin" class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; font-size: 0.95rem; font-weight: 700; border-radius: 10px;">

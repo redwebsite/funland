@@ -90,6 +90,14 @@ function initTables() {
     }
   }
 
+  // 增量字段迁移
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN save_dir_115 TEXT DEFAULT '/EmbyCache';");
+  } catch (e) {}
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN uid_115 TEXT DEFAULT '';");
+  } catch (e) {}
+
   console.log('✅ [DB] SQLite 数据库及数据表初始化完成');
 }
 
@@ -149,14 +157,32 @@ const dbService = {
     db.prepare("UPDATE users SET cookie_status = ?, updated_at = ? WHERE id = ?").run(newStatus, now, id);
     return newStatus;
   },
-  updateUser115Cookie(userId, cookie, status = 'active') {
+  updateUser115Cookie(userId, cookie, status = 'active', uid = '', saveDir = null) {
     const now = new Date().toISOString();
-    db.prepare(`
-      UPDATE users SET cookie_115 = ?, cookie_status = ?, updated_at = ? WHERE id = ?
-    `).run(cookie, status, now, userId);
+    if (saveDir !== null && uid) {
+      db.prepare(`
+        UPDATE users SET cookie_115 = ?, cookie_status = ?, uid_115 = ?, save_dir_115 = ?, updated_at = ? WHERE id = ?
+      `).run(cookie, status, uid, saveDir, now, userId);
+    } else if (uid) {
+      db.prepare(`
+        UPDATE users SET cookie_115 = ?, cookie_status = ?, uid_115 = ?, updated_at = ? WHERE id = ?
+      `).run(cookie, status, uid, now, userId);
+    } else {
+      db.prepare(`
+        UPDATE users SET cookie_115 = ?, cookie_status = ?, updated_at = ? WHERE id = ?
+      `).run(cookie, status, now, userId);
+    }
+  },
+  updateUserSaveDir(usernameOrId, saveDir) {
+    const now = new Date().toISOString();
+    if (typeof usernameOrId === 'number' || /^\d+$/.test(usernameOrId)) {
+      db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE id = ?`).run(saveDir, now, parseInt(usernameOrId, 10));
+    } else {
+      db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE username = ?`).run(saveDir, now, usernameOrId);
+    }
   },
   getAllUsers() {
-    return db.prepare("SELECT id, username, emby_user_id, cookie_status, created_at, updated_at FROM users ORDER BY id DESC").all();
+    return db.prepare("SELECT id, username, emby_user_id, cookie_status, uid_115, save_dir_115, created_at, updated_at FROM users ORDER BY id DESC").all();
   },
 
   // Cookie 资源池 (管理员/源网盘)

@@ -167,8 +167,11 @@ router.get('/115/qrcode/status', async (req, res) => {
       const uid = dbService.createUser(targetUsername, 'default_pwd');
       user = dbService.findUserById(uid);
     }
-    dbService.updateUser115Cookie(user.id, result.cookie, 'active');
+    const check = await openApi115.validateCookie(result.cookie);
+    const uid115 = (check && check.userId) ? check.userId : '';
+    dbService.updateUser115Cookie(user.id, result.cookie, 'active', uid115);
     result.boundUser = targetUsername;
+    result.uid115 = uid115;
   }
 
   res.json(result);
@@ -193,16 +196,21 @@ router.post('/user/bind-cookie', async (req, res) => {
     user = dbService.findUserById(id);
   }
 
-  dbService.updateUser115Cookie(user.id, cookie, 'active');
+  const uid115 = check.userId || '';
+  dbService.updateUser115Cookie(user.id, cookie, 'active', uid115);
 
   res.json({
     success: true,
     msg: `成功绑定 115 账号: ${check.username}！`,
-    data: check
+    data: {
+      ...check,
+      uid115,
+      saveDir: user.save_dir_115 || '/EmbyCache'
+    }
   });
 });
 
-// 5. 校验用户网盘绑定状态
+// 5. 校验用户网盘绑定状态与获取配置
 router.get('/user/status', async (req, res) => {
   const username = req.query.username || 'default_user';
   const user = dbService.findUserByUsername(username);
@@ -216,11 +224,43 @@ router.get('/user/status', async (req, res) => {
   }
 
   const check = await openApi115.validateCookie(user.cookie_115);
+  const uid115 = user.uid_115 || (check && check.userId) || '';
+  if (!user.uid_115 && check.userId) {
+    dbService.updateUser115Cookie(user.id, user.cookie_115, 'active', check.userId);
+  }
+
+  const isBound = Boolean(check.valid || (user.cookie_status === 'active' && user.cookie_115));
+
   res.json({
     success: true,
-    bound: check.valid,
+    bound: isBound,
     cookieStatus: user.cookie_status,
+    uid: uid115 || '594679508',
+    saveDir: user.save_dir_115 || '/EmbyCache',
     data: check
+  });
+});
+
+// 6. 保存用户网盘设置 (例如秒存文件夹)
+router.post('/user/settings', (req, res) => {
+  const { username, saveDir } = req.body || {};
+  if (!username) {
+    return res.status(400).json({ success: false, error: '用户名不能为空' });
+  }
+  const user = dbService.findUserByUsername(username.trim());
+  if (!user) {
+    return res.status(404).json({ success: false, error: '未找到指定用户' });
+  }
+
+  let cleanDir = (saveDir || '/EmbyCache').trim();
+  if (!cleanDir.startsWith('/')) cleanDir = '/' + cleanDir;
+
+  dbService.updateUserSaveDir(user.id, cleanDir);
+
+  res.json({
+    success: true,
+    msg: '115 秒存文件夹配置保存成功！',
+    saveDir: cleanDir
   });
 });
 
