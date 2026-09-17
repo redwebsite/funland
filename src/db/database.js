@@ -80,7 +80,10 @@ function initTables() {
     { key: 'acceleration_mode', value: 'PRO' }, // 'PRO' (3级智能加速) 或 'NORMAL' (仅源盘直链)
     { key: 'cache_ttl_seconds', value: String(config.cache.ttlSeconds) },
     { key: 'allow_registration', value: 'true' }, // 新用户自主注册开关
-    { key: 'max_users_limit', value: '200' }      // 最大注册人数上限 (例如 200 人)
+    { key: 'max_users_limit', value: '200' },      // 最大注册人数上限 (例如 200 人)
+    { key: 'emby_sync_user', value: 'true' },      // 是否自动同步注册 Emby 账号
+    { key: 'emby_template_user_id', value: '' },   // 模板用户 ID
+    { key: 'emby_template_user_name', value: '' }  // 模板用户名称
   ];
 
   for (const item of defaults) {
@@ -145,6 +148,10 @@ const dbService = {
       VALUES (?, ?, ?, ?, ?)
     `).run(username, passwordHash, embyUserId, now, now);
     return result.lastInsertRowid;
+  },
+  updateEmbyUserId(id, embyUserId) {
+    const now = new Date().toISOString();
+    return db.prepare("UPDATE users SET emby_user_id = ?, updated_at = ? WHERE id = ?").run(embyUserId, now, id);
   },
   deleteUser(id) {
     return db.prepare("DELETE FROM users WHERE id = ?").run(id);

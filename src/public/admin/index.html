@@ -55,7 +55,10 @@
     <div class="sidebar-footer">
       <div class="admin-profile-row">
         <div class="admin-profile-info">
-          <span class="admin-avatar">👤</span>
+          <div class="admin-avatar-wrapper">
+            <span class="admin-avatar">👤</span>
+            <span class="status-dot-pulse" title="已连接在线"></span>
+          </div>
           <span id="currentAdminBadge" class="admin-badge-name">admin</span>
         </div>
         <button onclick="handleAdminLogout()" class="btn-sidebar-logout" title="退出管理后台">
@@ -65,9 +68,6 @@
             <line x1="21" y1="12" x2="9" y2="12"></line>
           </svg>
         </button>
-      </div>
-      <div class="server-status-center">
-        <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
       </div>
     </div>
   </aside>
@@ -192,6 +192,37 @@
             </div>
           </div>
           <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存 Emby 配置</button>
+        </form>
+      </div>
+
+      <!-- 联动 Emby 模式：用户同步与模板克隆 -->
+      <div class="glass-panel" style="margin-top: 24px;">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>👥</span> 联动 Emby 模式：Emby 账号自动创建与模板克隆</h2>
+        </div>
+        <form id="embySyncForm" onsubmit="saveEmbySyncSettings(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">注册时自动在 Emby 同步创建账号</label>
+              <select class="form-select" id="cfgEmbySyncUser">
+                <option value="true">✅ 开启 (用户在门户注册时，自动在 Emby 创建同名账号并赋予密码)</option>
+                <option value="false">⛔ 关闭 (仅在 Funland 本地记录，不同步到 Emby)</option>
+              </select>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">开启后，用户在门户完成注册即可直接用该账号登录 Emby 各大客户端</small>
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label class="form-label" style="margin-bottom: 0;">新用户权限克隆模板 (Template User)</label>
+                <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="fetchEmbyUsersList()">🔄 拉取 Emby 用户</button>
+              </div>
+              <select class="form-select" id="cfgEmbyTemplateUser" style="margin-top: 6px;">
+                <option value="">-- 未选择模板 (使用 Emby 默认配置) --</option>
+              </select>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">开启联动后，新注册用户将完整继承该模板用户的媒体库可见范围及转码策略（系统会自动强制禁用其管理员权限）</small>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存模板与同步策略</button>
         </form>
       </div>
     </section>
@@ -341,6 +372,7 @@
               <tr>
                 <th>UID</th>
                 <th>用户名</th>
+                <th>Emby 账号</th>
                 <th>115 网盘状态</th>
                 <th>注册时间</th>
                 <th>状态</th>
@@ -348,7 +380,7 @@
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
             </tbody>
           </table>
         </div>

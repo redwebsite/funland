@@ -1,6 +1,9 @@
 const express = require('express');
 const axios = require('axios');
+const https = require('https');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 const config = require('../config');
 const { dbService } = require('../db/database');
 const cacheScheduler = require('./cache-scheduler');
@@ -29,7 +32,8 @@ function createEmbyMiddleware() {
       // 尝试查询 Items 详情
       const res = await axios.get(`${base}/emby/Items?Ids=${itemId}&Fields=Path,MediaSources,MediaStreams,Overview`, {
         headers,
-        timeout: 4000
+        timeout: 4000,
+        httpsAgent
       });
 
       if (res.data && res.data.Items && res.data.Items.length > 0) {
@@ -222,6 +226,7 @@ function createEmbyMiddleware() {
     changeOrigin: true,
     ws: true,
     xfwd: true,
+    secure: false, // 允许自签名或 IP HTTPS 证书
     logger: console,
     on: {
       error: (err, req, res) => {

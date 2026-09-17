@@ -41,7 +41,9 @@ function showLoginOverlay(errMsg = '') {
     }
   }
   const badge = document.getElementById('currentAdminBadge');
-  if (badge) badge.innerText = '👤 未登录';
+  if (badge) badge.innerText = '未登录';
+  const dot = document.querySelector('.status-dot-pulse');
+  if (dot) dot.classList.add('offline');
 }
 
 function hideLoginOverlay() {
@@ -72,7 +74,9 @@ async function checkAuthAndInit() {
     if (json.success && json.authenticated) {
       hideLoginOverlay();
       const badge = document.getElementById('currentAdminBadge');
-      if (badge) badge.innerText = `👤 ${json.username || 'admin'}`;
+      if (badge) badge.innerText = json.username || 'admin';
+      const dot = document.querySelector('.status-dot-pulse');
+      if (dot) dot.classList.remove('offline');
       refreshCurrentTab();
     } else {
       localStorage.removeItem('funland_admin_token');
@@ -118,7 +122,9 @@ async function handleAdminLogin(e) {
       localStorage.setItem('funland_admin_token', json.token);
       hideLoginOverlay();
       const badge = document.getElementById('currentAdminBadge');
-      if (badge) badge.innerText = `👤 ${json.username || user}`;
+      if (badge) badge.innerText = json.username || user;
+      const dot = document.querySelector('.status-dot-pulse');
+      if (dot) dot.classList.remove('offline');
       showToast('登录成功，欢迎使用 Funland 管理控制台！');
       refreshCurrentTab();
     } else {
@@ -269,6 +275,8 @@ async function loadStats() {
 }
 
 // Emby 设置
+let cachedEmbyTemplateUserId = '';
+
 async function loadEmbySettings() {
   try {
     const res = await adminFetch('/api/admin/settings');
@@ -280,8 +288,74 @@ async function loadEmbySettings() {
       if (s.emby_api_key && document.getElementById('cfgEmbyKey')) document.getElementById('cfgEmbyKey').value = s.emby_api_key;
       if (s.acceleration_mode && document.getElementById('cfgAccelMode')) document.getElementById('cfgAccelMode').value = s.acceleration_mode;
       if (s.cache_ttl_seconds && document.getElementById('cfgTtl')) document.getElementById('cfgTtl').value = s.cache_ttl_seconds;
+
+      // 联动 Emby 同步配置
+      if (s.emby_sync_user !== undefined && document.getElementById('cfgEmbySyncUser')) {
+        document.getElementById('cfgEmbySyncUser').value = s.emby_sync_user;
+      }
+      cachedEmbyTemplateUserId = s.emby_template_user_id || '';
+      fetchEmbyUsersList(cachedEmbyTemplateUserId);
     }
   } catch (e) { }
+}
+
+async function fetchEmbyUsersList(selectedUserId = '') {
+  const select = document.getElementById('cfgEmbyTemplateUser');
+  if (!select) return;
+
+  const targetId = selectedUserId || cachedEmbyTemplateUserId;
+
+  try {
+    const res = await adminFetch('/api/admin/emby-users');
+    const json = await res.json();
+    if (json.success && Array.isArray(json.data)) {
+      select.innerHTML = '<option value="">-- 未选择模板 (使用 Emby 默认配置) --</option>';
+      json.data.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.id;
+        opt.textContent = `${u.name} ${u.isAdmin ? '👑 [管理员]' : '👤 [普通用户]'}`;
+        if (u.id === targetId) opt.selected = true;
+        select.appendChild(opt);
+      });
+    } else {
+      console.warn('获取 Emby 用户列表警告:', json.error);
+    }
+  } catch (err) {
+    console.error('拉取 Emby 用户失败:', err);
+  }
+}
+
+async function saveEmbySyncSettings(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const syncUser = document.getElementById('cfgEmbySyncUser').value;
+  const select = document.getElementById('cfgEmbyTemplateUser');
+  const templateUserId = select ? select.value : '';
+  const templateUserName = (select && select.selectedOptions && select.selectedOptions[0]) 
+    ? select.selectedOptions[0].textContent 
+    : '';
+
+  try {
+    const res = await adminFetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          emby_sync_user: syncUser,
+          emby_template_user_id: templateUserId,
+          emby_template_user_name: templateUserName
+        }
+      })
+    });
+    const json = await res.json();
+    if (json.success) {
+      cachedEmbyTemplateUserId = templateUserId;
+      showToast('联动 Emby 用户同步与模板配置已保存生效！');
+    } else {
+      showToast(json.error || '保存失败', 'error');
+    }
+  } catch (err) {
+    showToast('网络异常: ' + err.message, 'error');
+  }
 }
 
 async function saveEmbySettings(e) {
@@ -301,7 +375,8 @@ async function saveEmbySettings(e) {
     });
     const json = await res.json();
     if (json.success) {
-      showToast('Emby 配置已保存生效！');
+      showToast('Emby 基础连接配置已保存！正在刷新用户列表...');
+      fetchEmbyUsersList();
     } else {
       showToast(json.error || '保存失败', 'error');
     }
@@ -532,24 +607,28 @@ async function loadUsers() {
     tbody.innerHTML = '';
 
     if (!usersJson.data || usersJson.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无注册用户</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无注册用户</td></tr>';
       return;
     }
 
     usersJson.data.forEach(user => {
       const tr = document.createElement('tr');
       const isDisabled = user.cookie_status === 'disabled';
+      const hasEmby = Boolean(user.emby_user_id);
+
       tr.innerHTML = `
         <td>#${user.id}</td>
         <td><strong>${escapeHtml(user.username)}</strong></td>
+        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback" title="该用户尚未在 Emby 服务端创建">⚠️ 未同步</span>`}</td>
         <td><span class="badge ${user.cookie_status === 'active' ? 'badge-step1' : 'badge-fallback'}">${escapeHtml(user.cookie_status || '未绑定')}</span></td>
         <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</td>
         <td><span class="badge ${isDisabled ? 'badge-fallback' : 'badge-step2'}">${isDisabled ? '已封禁' : '正常'}</span></td>
-        <td style="display: flex; gap: 8px;">
-          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">
+        <td style="display: flex; gap: 8px; flex-wrap: wrap;">
+          ${!hasEmby ? `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="syncUserToEmby(${user.id}, '${escapeHtml(user.username)}')">同步至 Emby</button>` : ''}
+          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">
             ${isDisabled ? '解封' : '封禁'}
           </button>
-          <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">
+          <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">
             删除
           </button>
         </td>
@@ -558,6 +637,30 @@ async function loadUsers() {
     });
   } catch (e) {
     showToast('加载用户数据失败: ' + e.message, 'error');
+  }
+}
+
+async function syncUserToEmby(id, username) {
+  const pwd = prompt(`请输入要在 Emby 中为用户 "${username}" 创建的初始密码\n(若留空则默认为 12345678):`, '12345678');
+  if (pwd === null) return;
+  const initialPassword = pwd.trim() || '12345678';
+
+  try {
+    showToast(`正在向 Emby 同步创建用户 ${username}...`);
+    const res = await adminFetch(`/api/admin/users/${id}/sync-emby`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initialPassword })
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(json.msg || '同步成功！');
+      loadUsers();
+    } else {
+      showToast(json.error || '同步失败', 'error');
+    }
+  } catch (err) {
+    showToast('同步异常: ' + err.message, 'error');
   }
 }
 

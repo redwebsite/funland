@@ -2,6 +2,7 @@ const express = require('express');
 const { dbService } = require('../db/database');
 const cacheScheduler = require('../modules/cache-scheduler');
 const openApi115 = require('../modules/openapi-115');
+const embyApi = require('../modules/emby-api');
 const config = require('../config');
 
 const crypto = require('crypto');
@@ -217,13 +218,61 @@ router.post('/users/:id/toggle', (req, res) => {
 });
 
 // 14. 删除用户
-router.delete('/users/:id', (req, res) => {
+router.delete('/users/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     return res.status(400).json({ success: false, error: '用户 ID 参数无效' });
   }
+  const user = dbService.findUserById(id);
+  if (user && user.emby_user_id && req.query.deleteEmby === 'true') {
+    try {
+      await embyApi.deleteEmbyUser(user.emby_user_id);
+    } catch (err) {}
+  }
   dbService.deleteUser(id);
   res.json({ success: true, msg: `用户 #${id} 已成功删除` });
+});
+
+// 15. 获取上游 Emby 用户列表（供后台选择模板用户）
+router.get('/emby-users', async (req, res) => {
+  try {
+    const users = await embyApi.getEmbyUsers();
+    res.json({ success: true, data: users });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// 16. 手动补同步已有用户至 Emby
+router.post('/users/:id/sync-emby', async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ success: false, error: '无效用户 ID' });
+  }
+
+  const user = dbService.findUserById(id);
+  if (!user) {
+    return res.status(404).json({ success: false, error: '用户不存在' });
+  }
+
+  const { initialPassword } = req.body || {};
+  const templateUserId = dbService.getSetting('emby_template_user_id', '');
+
+  try {
+    const embyResult = await embyApi.createEmbyUser(
+      user.username,
+      initialPassword || '12345678',
+      templateUserId
+    );
+    dbService.updateEmbyUserId(id, embyResult.embyUserId);
+    res.json({
+      success: true,
+      msg: `已成功在 Emby 创建用户 "${user.username}" 并完成模板权限克隆！初始密码: ${initialPassword || '12345678'}`,
+      embyUserId: embyResult.embyUserId
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
 
 module.exports = router;

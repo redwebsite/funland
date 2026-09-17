@@ -1,6 +1,7 @@
 const express = require('express');
 const { dbService } = require('../db/database');
 const openApi115 = require('../modules/openapi-115');
+const embyApi = require('../modules/emby-api');
 const config = require('../config');
 
 const router = express.Router();
@@ -72,7 +73,7 @@ router.get('/user/reg-info', (req, res) => {
 });
 
 // 1.2 新用户自主注册接口
-router.post('/user/register', (req, res) => {
+router.post('/user/register', async (req, res) => {
   const allowReg = dbService.getSetting('allow_registration', 'true') === 'true';
   const maxLimit = parseInt(dbService.getSetting('max_users_limit', '200'), 10);
   const currentCount = dbService.getUserCount();
@@ -90,21 +91,44 @@ router.post('/user/register', (req, res) => {
     return res.status(400).json({ success: false, error: '用户名须至少3位，密码须至少6位' });
   }
 
-  const existing = dbService.findUserByUsername(username.trim());
+  const cleanUsername = username.trim();
+  const cleanPassword = password.trim();
+
+  const existing = dbService.findUserByUsername(cleanUsername);
   if (existing) {
     return res.status(400).json({ success: false, error: '该用户名已被占用' });
   }
 
+  // 检查是否开启了 Emby 用户自动同步 (联动 Emby 模式)
+  const syncEmby = dbService.getSetting('emby_sync_user', 'true') === 'true';
+  const templateUserId = dbService.getSetting('emby_template_user_id', '');
+  let embyUserId = '';
+
+  if (syncEmby) {
+    try {
+      const embyResult = await embyApi.createEmbyUser(cleanUsername, cleanPassword, templateUserId);
+      embyUserId = embyResult.embyUserId || '';
+      console.log(`🎬 [Emby Sync] 成功为用户 ${cleanUsername} 创建 Emby 账号 (ID: ${embyUserId})`);
+    } catch (err) {
+      console.error('[User Register] 同步创建 Emby 账号失败:', err.message);
+      return res.status(400).json({
+        success: false,
+        error: `无法在 Emby 服务器创建账号: ${err.message}`
+      });
+    }
+  }
+
   const crypto = require('crypto');
-  const passwordHash = crypto.createHash('sha256').update(password.trim()).digest('hex');
-  const newId = dbService.createUser(username.trim(), passwordHash);
+  const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
+  const newId = dbService.createUser(cleanUsername, passwordHash, embyUserId);
 
   res.json({
     success: true,
-    msg: '注册成功！请登录并绑定您的 115 账号',
+    msg: syncEmby ? '注册成功！已在 Emby 同步创建账号，请登录并绑定 115 账号' : '注册成功！请登录并绑定您的 115 账号',
     data: {
       id: newId,
-      username: username.trim(),
+      username: cleanUsername,
+      embyUserId,
       cookieStatus: 'unbound'
     }
   });
