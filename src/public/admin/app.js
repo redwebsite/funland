@@ -3,11 +3,17 @@
 let currentTab = 'dashboard';
 
 // 初始化
-document.addEventListener('DOMContentLoaded', () => {
+function init() {
   setupTabs();
   loadStats();
   loadEmbySettings();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
 
 // 选项卡切换
 function setupTabs() {
@@ -298,6 +304,9 @@ async function loadLogs() {
       `;
       tbody.appendChild(tr);
     });
+  } catch (e) { }
+}
+
 // 用户管理与注册配额
 async function loadUsers() {
   try {
