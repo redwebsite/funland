@@ -24,6 +24,9 @@ async function loadSystemInfo() {
       if (data.embyServerAddress) {
         document.getElementById('embyServerAddress').innerText = data.embyServerAddress;
       }
+      if (data.domain && document.getElementById('embyHostOnly')) {
+        document.getElementById('embyHostOnly').innerText = `emby.${data.domain}`;
+      }
     }
   } catch (e) { }
 }
@@ -268,37 +271,8 @@ async function submitManualCookie() {
   }
 }
 
-// 4. 客户端引导切换
-function switchClient(client) {
-  currentClient = client;
-  document.getElementById('btnClientInfuse').classList.toggle('active', client === 'infuse');
-  document.getElementById('btnClientVidhub').classList.toggle('active', client === 'vidhub');
-  document.getElementById('btnClientEmby').classList.toggle('active', client === 'emby');
-
-  const stepsContainer = document.getElementById('guideSteps');
-  if (client === 'infuse') {
-    stepsContainer.innerHTML = `
-      <div class="step-item"><div class="step-number">1</div><div class="step-content">打开 Infuse，点击【设置】->【添加文件来源】-> 选择 <strong>Emby</strong>。</div></div>
-      <div class="step-item"><div class="step-number">2</div><div class="step-content">输入服务器地址: <code>emby.xxfa.de</code>，端口: <code>8097</code>。</div></div>
-      <div class="step-item"><div class="step-number">3</div><div class="step-content">输入你在 Emby 上的账号密码完成登录并等待同步。</div></div>
-      <div class="step-item"><div class="step-number">4</div><div class="step-content">点播任何视频，Infuse 自动接收 302 满速直链，享受蓝光原盘丝滑解码。</div></div>
-    `;
-  } else if (client === 'vidhub') {
-    stepsContainer.innerHTML = `
-      <div class="step-item"><div class="step-number">1</div><div class="step-content">打开 VidHub，点击【媒体库】->【添加媒体源】-> 选择 <strong>Emby</strong>。</div></div>
-      <div class="step-item"><div class="step-number">2</div><div class="step-content">服务器填入 <code>emby.xxfa.de:8097</code> 或选择 HTTPS 填入 <code>emby.xxfa.de</code>。</div></div>
-      <div class="step-item"><div class="step-number">3</div><div class="step-content">登录你的 Emby 用户名和密码。</div></div>
-      <div class="step-item"><div class="step-number">4</div><div class="step-content">VidHub 播放器原生支持 302 重定向，直接走 115 满速 CDN 播放。</div></div>
-    `;
-  } else if (client === 'emby') {
-    stepsContainer.innerHTML = `
-      <div class="step-item"><div class="step-number">1</div><div class="step-content">打开官方 Emby 客户端或在浏览器中访问 <code>http://emby.xxfa.de:8097</code>。</div></div>
-      <div class="step-item"><div class="step-number">2</div><div class="step-content">手动输入主机地址: <code>emby.xxfa.de</code>，端口: <code>8097</code>。</div></div>
-      <div class="step-item"><div class="step-number">3</div><div class="step-content">登录你的个人 Emby 账号。</div></div>
-      <div class="step-item"><div class="step-number">4</div><div class="step-content">播放视频，后台控制台可实时查看到 302 Found 重定向日志。</div></div>
-    `;
-  }
-}
+// 4. 通用连接说明
+// 整合通用连接参数，适配全部 Emby 客户端 (Infuse / VidHub / Fileball / SenPlayer / 官方客户端)
 
 // 5. 复制地址
 function copyServerAddress() {
