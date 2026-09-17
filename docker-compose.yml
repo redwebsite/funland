@@ -6,14 +6,16 @@ services:
     container_name: funland
     restart: unless-stopped
     network_mode: host
+    env_file:
+      - .env
     environment:
       - TZ=Asia/Shanghai
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
-      - PORT_PORTAL=8098
-      - PORT_ADMIN=8091
-      - PORT_EMBY=8097
-      - EMBY_UPSTREAM_URL=https://xart.fun:443
-      - CACHE_TTL_SECONDS=1800
+      - PORT_PORTAL=${PORT_PORTAL:-8098}
+      - PORT_ADMIN=${PORT_ADMIN:-8091}
+      - PORT_EMBY=${PORT_EMBY:-8097}
+      - EMBY_UPSTREAM_URL=${EMBY_UPSTREAM_URL:-https://xart.fun:443}
+      - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-1800}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -23,6 +25,9 @@ services:
     container_name: caddy
     restart: unless-stopped
     network_mode: host
+    environment:
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
