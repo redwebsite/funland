@@ -46,13 +46,17 @@
 ## ⚡ 快速启动（本地开发）
 
 ```bash
-# 1. 进入项目目录
-cd "/Users/wangshiyi/Desktop/W/Github Reps/funland"
+# 1. 克隆并进入项目目录
+git clone https://github.com/your-username/funland.git
+cd funland
 
-# 2. 安装依赖
+# 2. 复制配置文件
+cp .env.example .env
+
+# 3. 安装依赖
 npm install
 
-# 3. 启动服务 (同时拉起 8098, 8091, 8097)
+# 4. 启动服务 (同时拉起 8098, 8091, 8097)
 npm start
 ```
 
