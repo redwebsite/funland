@@ -20,8 +20,14 @@
       </div>
     </div>
     <div class="nav-links">
-      <a href="/admin" target="_blank" style="color: var(--text-muted); text-decoration: none; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border-color);">
-        <span>🛡️ 管理后台 (8091)</span>
+      <span id="navRegBadge" class="qr-status-badge" style="margin: 0; font-size: 0.78rem; padding: 4px 10px;">
+        ⏳ 查询名额...
+      </span>
+      <button id="btnUserAuth" onclick="openAuthModal()" style="padding: 6px 14px; border-radius: 8px; background: var(--gradient-hero); color: #fff; font-weight: 600; font-size: 0.82rem; border: none; cursor: pointer;">
+        👤 登录 / 注册
+      </button>
+      <a href="/admin" target="_blank" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem; display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-color);">
+        <span>🛡️ 管理后台</span>
       </a>
     </div>
   </header>
@@ -145,6 +151,38 @@
   <footer class="footer">
     Funland &copy; 2026 Powered by NextEmby Architecture | Domain: xxfa.de
   </footer>
+
+  <!-- 用户登录与自主注册弹窗 -->
+  <div id="authModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 999; align-items: center; justify-content: center;">
+    <div style="background: rgba(15, 23, 42, 0.95); border: 1px solid var(--border-color); border-radius: 20px; padding: 28px; width: 100%; max-width: 400px; box-shadow: var(--shadow-card); position: relative;">
+      <button onclick="closeAuthModal()" style="position: absolute; right: 20px; top: 18px; background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">✕</button>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 18px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+        <button id="tabAuthLogin" class="sub-tab-btn active" onclick="switchAuthTab('login')">用户登录</button>
+        <button id="tabAuthReg" class="sub-tab-btn" onclick="switchAuthTab('reg')">注册新账号</button>
+      </div>
+
+      <div id="regQuotaAlert" style="display: none; margin-bottom: 14px; padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.3); color: #818cf8;">
+        💡 剩余注册名额: <strong id="modalQuotaSlots">200</strong> 人
+      </div>
+
+      <form id="authForm" onsubmit="handleAuthSubmit(event)">
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">用户名</label>
+          <input type="text" id="authUsername" required minlength="3" placeholder="至少 3 位字母或数字" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff;">
+        </div>
+
+        <div style="margin-bottom: 18px;">
+          <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px;">密码</label>
+          <input type="password" id="authPassword" required minlength="6" placeholder="至少 6 位密码" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 10px; padding: 10px; color: #fff;">
+        </div>
+
+        <button type="submit" id="btnAuthSubmit" style="width: 100%; padding: 12px; border-radius: 10px; background: var(--gradient-hero); border: none; color: #fff; font-weight: 700; cursor: pointer; font-size: 0.95rem;">
+          立即登录
+        </button>
+      </form>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

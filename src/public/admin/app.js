@@ -36,6 +36,7 @@ function switchTab(tab) {
     'cookie-pool': ['115 账号资源池', '管理系统兜底源盘与秒传使用的 115 高级账号'],
     cache: ['滑动过期缓存', '查看当前 30 分钟活动直链，验证滑动续期与命中情况'],
     files: ['文件与 SHA1 库', '本地已索引的媒体文件、SHA1 指纹与播放热度'],
+    users: ['用户管理与配额', '配置开放自主注册开关、最大注册人数上限并管理用户账号'],
     logs: ['播放拦截日志', '查看实时捕获的 Emby 播放请求流与 302 调度链路']
   };
 
@@ -53,6 +54,7 @@ function refreshCurrentTab() {
   else if (currentTab === 'cookie-pool') loadCookiePool();
   else if (currentTab === 'cache') loadCache();
   else if (currentTab === 'files') loadFiles();
+  else if (currentTab === 'users') loadUsers();
   else if (currentTab === 'logs') loadLogs();
 }
 
@@ -285,6 +287,120 @@ async function loadLogs() {
       `;
       tbody.appendChild(tr);
     });
+// 用户管理与注册配额
+async function loadUsers() {
+  try {
+    const [usersRes, settingsRes] = await Promise.all([
+      fetch('/api/admin/users'),
+      fetch('/api/admin/settings')
+    ]);
+    const usersJson = await usersRes.json();
+    const settingsJson = await settingsRes.json();
+
+    if (settingsJson.success) {
+      const s = settingsJson.data;
+      if (s.allow_registration !== undefined) {
+        document.getElementById('cfgAllowReg').value = s.allow_registration;
+      }
+      if (s.max_users_limit !== undefined) {
+        document.getElementById('cfgMaxUsers').value = s.max_users_limit;
+      }
+
+      const currentCount = usersJson.data ? usersJson.data.length : 0;
+      const maxLimit = parseInt(s.max_users_limit || '200', 10);
+      const percent = Math.min(100, Math.round((currentCount / maxLimit) * 100));
+
+      document.getElementById('userQuotaText').innerText = `${currentCount} / ${maxLimit} (${percent}%)`;
+      const bar = document.getElementById('userQuotaBar');
+      bar.style.width = `${percent}%`;
+      if (percent >= 100) {
+        bar.style.background = 'linear-gradient(90deg, #ef4444, #f97316)';
+      } else {
+        bar.style.background = 'linear-gradient(90deg, #6366f1, #a855f7)';
+      }
+    }
+
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '';
+
+    if (!usersJson.data || usersJson.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无注册用户</td></tr>';
+      return;
+    }
+
+    usersJson.data.forEach(user => {
+      const tr = document.createElement('tr');
+      const isDisabled = user.cookie_status === 'disabled';
+      tr.innerHTML = `
+        <td>#${user.id}</td>
+        <td><strong>${escapeHtml(user.username)}</strong></td>
+        <td><span class="badge ${user.cookie_status === 'active' ? 'badge-step1' : 'badge-fallback'}">${escapeHtml(user.cookie_status || '未绑定')}</span></td>
+        <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</td>
+        <td><span class="badge ${isDisabled ? 'badge-fallback' : 'badge-step2'}">${isDisabled ? '已封禁' : '正常'}</span></td>
+        <td style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">
+            ${isDisabled ? '解封' : '封禁'}
+          </button>
+          <button class="btn btn-danger" style="padding: 4px 10px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">
+            删除
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    showToast('加载用户数据失败: ' + e.message, 'error');
+  }
+}
+
+async function saveRegSettings(e) {
+  e.preventDefault();
+  const allow_registration = document.getElementById('cfgAllowReg').value;
+  const max_users_limit = document.getElementById('cfgMaxUsers').value.trim();
+
+  try {
+    const res = await fetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        settings: {
+          allow_registration,
+          max_users_limit
+        }
+      })
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast('注册与配额策略已更新！');
+      loadUsers();
+    } else {
+      showToast(json.error || '保存失败', 'error');
+    }
+  } catch (err) {
+    showToast('网络异常: ' + err.message, 'error');
+  }
+}
+
+async function toggleUser(id) {
+  try {
+    const res = await fetch(`/api/admin/users/${id}/toggle`, { method: 'POST' });
+    const json = await res.json();
+    if (json.success) {
+      showToast(json.msg || '状态已更改');
+      loadUsers();
+    }
+  } catch (e) { }
+}
+
+async function deleteUserAccount(id) {
+  if (!confirm('确定彻底删除该用户账号？')) return;
+  try {
+    const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (json.success) {
+      showToast('用户已删除');
+      loadUsers();
+    }
   } catch (e) { }
 }
 

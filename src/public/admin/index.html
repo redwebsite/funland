@@ -41,6 +41,10 @@
         <span class="nav-icon">📁</span>
         <span>文件与 SHA1 库</span>
       </div>
+      <div class="nav-item" data-tab="users">
+        <span class="nav-icon">👥</span>
+        <span>用户管理与配额</span>
+      </div>
       <div class="nav-item" data-tab="logs">
         <span class="nav-icon">📜</span>
         <span>播放拦截日志</span>
@@ -272,7 +276,71 @@
       </div>
     </section>
 
-    <!-- 选项卡 6: 播放拦截日志 -->
+    <!-- 选项卡 6: 用户管理与配额 -->
+    <section id="tab-users" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>👥</span> 新用户注册开关与容量配额</h2>
+        </div>
+        <form id="regSettingsForm" onsubmit="saveRegSettings(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">开放新用户自主注册</label>
+              <select class="form-select" id="cfgAllowReg">
+                <option value="true">✅ 开启注册 (允许新用户访问门户自主注册)</option>
+                <option value="false">⛔ 关闭注册 (仅允许已有用户登录使用)</option>
+              </select>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">关闭后，门户端将停止接受新账号注册申请</small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">系统最大注册人数限制 (容量配额)</label>
+              <input type="number" class="form-input" id="cfgMaxUsers" min="1" max="10000" value="200" required>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">默认 200 人。达到该人数后系统将自动锁死注册入口并提示名额已满</small>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存注册与配额策略</button>
+        </form>
+      </div>
+
+      <!-- 配额使用进度卡片 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>📊</span> 当前用户容量占用率</h2>
+          <span id="userQuotaText" style="font-size: 0.9rem; font-weight: 600; color: #38bdf8;">0 / 200 (0%)</span>
+        </div>
+        <div style="background: rgba(255,255,255,0.05); border-radius: 9999px; height: 12px; overflow: hidden; width: 100%;">
+          <div id="userQuotaBar" style="background: linear-gradient(90deg, #6366f1, #a855f7); width: 0%; height: 100%; transition: width 0.4s ease;"></div>
+        </div>
+      </div>
+
+      <!-- 用户列表卡片 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>📋</span> 已注册用户列表</h2>
+          <button class="btn btn-secondary" onclick="loadUsers()">🔄 刷新用户</button>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>UID</th>
+                <th>用户名</th>
+                <th>115 网盘状态</th>
+                <th>注册时间</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡 7: 播放拦截日志 -->
     <section id="tab-logs" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">

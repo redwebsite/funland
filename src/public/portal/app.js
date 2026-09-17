@@ -3,9 +3,14 @@
 let qrSession = null;
 let qrPollTimer = null;
 let currentClient = 'infuse';
+let currentUser = localStorage.getItem('funland_user') || null;
+let currentAuthMode = 'login';
+let cachedRegInfo = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   loadSystemInfo();
+  loadRegInfo();
+  updateUserUi();
   initQrLogin();
 });
 
@@ -21,6 +26,130 @@ async function loadSystemInfo() {
       }
     }
   } catch (e) { }
+}
+
+// 1.1 获取注册状态与名额
+async function loadRegInfo() {
+  try {
+    const res = await fetch('/api/user/reg-info');
+    const json = await res.json();
+    if (json.success) {
+      cachedRegInfo = json.data;
+      const badge = document.getElementById('navRegBadge');
+      if (!cachedRegInfo.isSwitchOpen) {
+        badge.innerText = '⛔ 注册已关闭';
+        badge.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+        badge.style.color = '#f87171';
+        badge.style.background = 'rgba(239, 68, 68, 0.15)';
+      } else if (cachedRegInfo.remainingSlots <= 0) {
+        badge.innerText = `⚠️ 名额已满 (${cachedRegInfo.maxUsersLimit}人)`;
+        badge.style.borderColor = 'rgba(245, 158, 11, 0.4)';
+        badge.style.color = '#fbbf24';
+        badge.style.background = 'rgba(245, 158, 11, 0.15)';
+      } else {
+        badge.innerText = `🟢 开放注册 (${cachedRegInfo.remainingSlots}/${cachedRegInfo.maxUsersLimit})`;
+        badge.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+        badge.style.color = '#34d399';
+        badge.style.background = 'rgba(16, 185, 129, 0.15)';
+      }
+
+      if (document.getElementById('modalQuotaSlots')) {
+        document.getElementById('modalQuotaSlots').innerText = cachedRegInfo.remainingSlots;
+      }
+    }
+  } catch (e) { }
+}
+
+// 用户状态显示更新
+function updateUserUi() {
+  const btn = document.getElementById('btnUserAuth');
+  if (currentUser) {
+    btn.innerHTML = `<span>👤 ${escapeHtml(currentUser)}</span> <span onclick="logoutUser(event)" style="margin-left: 6px; opacity: 0.75;" title="退出登录">退出</span>`;
+    btn.style.background = 'rgba(99, 102, 241, 0.3)';
+    btn.style.border = '1px solid rgba(99, 102, 241, 0.5)';
+  } else {
+    btn.innerHTML = '👤 登录 / 注册';
+    btn.style.background = 'var(--gradient-hero)';
+    btn.style.border = 'none';
+  }
+}
+
+function logoutUser(e) {
+  if (e) e.stopPropagation();
+  localStorage.removeItem('funland_user');
+  currentUser = null;
+  updateUserUi();
+  alert('已退出登录');
+}
+
+// 弹窗控制
+function openAuthModal() {
+  if (currentUser) {
+    alert(`当前已登录为: ${currentUser}`);
+    return;
+  }
+  document.getElementById('authModal').style.display = 'flex';
+  switchAuthTab('login');
+}
+
+function closeAuthModal() {
+  document.getElementById('authModal').style.display = 'none';
+}
+
+function switchAuthTab(mode) {
+  currentAuthMode = mode;
+  const tabLogin = document.getElementById('tabAuthLogin');
+  const tabReg = document.getElementById('tabAuthReg');
+  const quotaAlert = document.getElementById('regQuotaAlert');
+  const submitBtn = document.getElementById('btnAuthSubmit');
+
+  if (mode === 'login') {
+    tabLogin.classList.add('active');
+    tabReg.classList.remove('active');
+    quotaAlert.style.display = 'none';
+    submitBtn.innerText = '立即登录';
+  } else {
+    tabReg.classList.add('active');
+    tabLogin.classList.remove('active');
+    quotaAlert.style.display = 'block';
+    submitBtn.innerText = '立即注册';
+
+    if (cachedRegInfo) {
+      document.getElementById('modalQuotaSlots').innerText = cachedRegInfo.remainingSlots;
+      if (!cachedRegInfo.allowed) {
+        alert(cachedRegInfo.statusText);
+      }
+    }
+  }
+}
+
+async function handleAuthSubmit(e) {
+  e.preventDefault();
+  const username = document.getElementById('authUsername').value.trim();
+  const password = document.getElementById('authPassword').value.trim();
+
+  const url = currentAuthMode === 'login' ? '/api/user/login' : '/api/user/register';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const json = await res.json();
+
+    if (json.success) {
+      alert(json.msg || (currentAuthMode === 'login' ? '登录成功！' : '注册成功！'));
+      currentUser = username;
+      localStorage.setItem('funland_user', username);
+      closeAuthModal();
+      updateUserUi();
+      loadRegInfo();
+    } else {
+      alert(json.error || '操作失败');
+    }
+  } catch (err) {
+    alert('请求异常: ' + err.message);
+  }
 }
 
 // 2. 扫码登录流程
@@ -62,9 +191,10 @@ async function pollQrStatus() {
   const badge = document.getElementById('qrStatusBadge');
   const dot = document.getElementById('qrStatusDot');
   const text = document.getElementById('qrStatusText');
+  const targetUser = currentUser || 'guest_user';
 
   try {
-    const res = await fetch(`/api/115/qrcode/status?uid=${uid}&time=${time}&sign=${sign}&username=portal_user`);
+    const res = await fetch(`/api/115/qrcode/status?uid=${uid}&time=${time}&sign=${sign}&username=${encodeURIComponent(targetUser)}`);
     const json = await res.json();
 
     if (json.status === 'waiting') {
@@ -75,10 +205,10 @@ async function pollQrStatus() {
     } else if (json.status === 'confirmed') {
       clearInterval(qrPollTimer);
       dot.innerText = '✅';
-      text.innerText = '登录授权成功！已绑定至 Funland';
+      text.innerText = `授权成功！已绑定至用户: ${targetUser}`;
       badge.className = 'qr-status-badge success';
       document.getElementById('boundCard').style.display = 'block';
-      document.getElementById('boundUserInfo').innerText = '当前绑定的账号已就绪，播放时将自动提取 115 原画直链。';
+      document.getElementById('boundUserInfo').innerText = `用户【${targetUser}】已完成 115 网盘授权，播放时将自动提取 115 满速原画直链。`;
     } else if (json.status === 'expired') {
       clearInterval(qrPollTimer);
       dot.innerText = '❌';
@@ -118,17 +248,18 @@ async function submitManualCookie() {
     return;
   }
 
+  const targetUser = currentUser || 'guest_user';
   try {
     const res = await fetch('/api/user/bind-cookie', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'portal_user', cookie })
+      body: JSON.stringify({ username: targetUser, cookie })
     });
     const json = await res.json();
     if (json.success) {
       alert(json.msg || '绑定成功！');
       document.getElementById('boundCard').style.display = 'block';
-      document.getElementById('boundUserInfo').innerText = `用户: ${json.data.username || '115账号'} (VIP到期: ${json.data.vipExpire || '未知'})`;
+      document.getElementById('boundUserInfo').innerText = `用户【${targetUser}】已绑定 115 账号: ${json.data.username || '115账号'} (VIP到期: ${json.data.vipExpire || '未知'})`;
     } else {
       alert(json.error || '绑定失败，请检查 Cookie 完整性');
     }
@@ -177,4 +308,14 @@ function copyServerAddress() {
   }).catch(() => {
     prompt('请长按或复制以下地址:', text);
   });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }

@@ -78,7 +78,9 @@ function initTables() {
     { key: 'emby_upstream_url', value: config.emby.upstreamUrl },
     { key: 'emby_api_key', value: config.emby.apiKey },
     { key: 'acceleration_mode', value: 'PRO' }, // 'PRO' (3级智能加速) 或 'NORMAL' (仅源盘直链)
-    { key: 'cache_ttl_seconds', value: String(config.cache.ttlSeconds) }
+    { key: 'cache_ttl_seconds', value: String(config.cache.ttlSeconds) },
+    { key: 'allow_registration', value: 'true' }, // 新用户自主注册开关
+    { key: 'max_users_limit', value: '200' }      // 最大注册人数上限 (例如 200 人)
   ];
 
   for (const item of defaults) {
@@ -118,6 +120,10 @@ const dbService = {
   },
 
   // 用户管理
+  getUserCount() {
+    const row = db.prepare("SELECT COUNT(*) as count FROM users").get();
+    return row ? row.count : 0;
+  },
   findUserByUsername(username) {
     return db.prepare("SELECT * FROM users WHERE username = ?").get(username);
   },
@@ -131,6 +137,17 @@ const dbService = {
       VALUES (?, ?, ?, ?, ?)
     `).run(username, passwordHash, embyUserId, now, now);
     return result.lastInsertRowid;
+  },
+  deleteUser(id) {
+    return db.prepare("DELETE FROM users WHERE id = ?").run(id);
+  },
+  toggleUserStatus(id) {
+    const user = db.prepare("SELECT id, cookie_status FROM users WHERE id = ?").get(id);
+    if (!user) return null;
+    const newStatus = user.cookie_status === 'disabled' ? 'active' : 'disabled';
+    const now = new Date().toISOString();
+    db.prepare("UPDATE users SET cookie_status = ?, updated_at = ? WHERE id = ?").run(newStatus, now, id);
+    return newStatus;
   },
   updateUser115Cookie(userId, cookie, status = 'active') {
     const now = new Date().toISOString();

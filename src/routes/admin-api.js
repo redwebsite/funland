@@ -18,7 +18,9 @@ router.get('/stats', (req, res) => {
       domain: config.domain,
       ports: config.ports,
       accelerationMode: dbService.getSetting('acceleration_mode', 'PRO'),
-      upstreamUrl: dbService.getSetting('emby_upstream_url', config.emby.upstreamUrl)
+      upstreamUrl: dbService.getSetting('emby_upstream_url', config.emby.upstreamUrl),
+      allowRegistration: dbService.getSetting('allow_registration', 'true') === 'true',
+      maxUsersLimit: parseInt(dbService.getSetting('max_users_limit', '200'), 10)
     }
   });
 });
@@ -141,6 +143,19 @@ router.get('/logs', (req, res) => {
 router.get('/users', (req, res) => {
   const users = dbService.getAllUsers();
   res.json({ success: true, data: users });
+});
+
+// 13. 切换用户状态 (封禁/解封)
+router.post('/users/:id/toggle', (req, res) => {
+  const newStatus = dbService.toggleUserStatus(req.params.id);
+  if (!newStatus) return res.status(404).json({ success: false, error: '用户不存在' });
+  res.json({ success: true, msg: `用户状态已切换为: ${newStatus}`, newStatus });
+});
+
+// 14. 删除用户
+router.delete('/users/:id', (req, res) => {
+  dbService.deleteUser(req.params.id);
+  res.json({ success: true, msg: '用户已删除' });
 });
 
 module.exports = router;
