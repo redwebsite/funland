@@ -70,8 +70,19 @@ async function loadStats() {
       document.getElementById('statHitRate').innerText = d.cache ? d.cache.hitRate : '100%';
       document.getElementById('statActiveKeys').innerText = d.cache ? d.cache.activeKeysCount : 0;
       document.getElementById('statPoolCount').innerText = d.totalPool || 0;
-      document.getElementById('statIndexedFiles').innerText = d.totalFiles || 0;
-      if (d.domain) document.getElementById('topDomain').innerText = d.domain;
+      const currentHost = window.location.hostname || 'localhost';
+      document.getElementById('topDomain').innerText = currentHost;
+
+      // 动态更新拓扑地址
+      if (document.getElementById('topologyPortal')) {
+        document.getElementById('topologyPortal').innerText = `http://${currentHost}:${d.ports ? d.ports.portal : 8098}`;
+      }
+      if (document.getElementById('topologyEmby')) {
+        document.getElementById('topologyEmby').innerText = `http://${currentHost}:${d.ports ? d.ports.emby : 8097}`;
+      }
+      if (document.getElementById('topologyAdmin')) {
+        document.getElementById('topologyAdmin').innerText = `http://${currentHost}:${d.ports ? d.ports.admin : 8091}`;
+      }
     }
   } catch (e) {
     showToast('获取统计数据失败: ' + e.message, 'error');

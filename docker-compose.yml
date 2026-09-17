@@ -8,7 +8,7 @@ services:
     network_mode: host
     environment:
       - TZ=Asia/Shanghai
-      - BASE_DOMAIN=xxfa.de
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
       - PORT_PORTAL=8098
       - PORT_ADMIN=8091
       - PORT_EMBY=8097

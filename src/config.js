@@ -2,7 +2,7 @@ require('dotenv').config();
 const path = require('path');
 
 const config = {
-  domain: process.env.BASE_DOMAIN || 'xxfa.de',
+  domain: process.env.BASE_DOMAIN || 'localhost',
   ports: {
     portal: parseInt(process.env.PORT_PORTAL || '8098', 10),
     admin: parseInt(process.env.PORT_ADMIN || '8091', 10),

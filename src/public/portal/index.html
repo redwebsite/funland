@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Funland - 次世代 Emby + 115 云盘直链加速平台</title>
+  <title>Funland - 智能 Emby 媒体流加速中枢</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
       <div class="logo-badge">⚡</div>
       <div>
         <div class="logo-text">Funland</div>
-        <div class="logo-sub">xxfa.de</div>
+        <div class="logo-sub">STREAM GATEWAY</div>
       </div>
     </div>
     <div class="nav-links">
@@ -35,10 +35,41 @@
   <!-- 主体区域 -->
   <main class="container">
     <section class="hero-section">
-      <h1 class="hero-title">次世代 Emby 媒体流加速</h1>
+      <div class="hero-pill">
+        <span class="hero-pill-dot"></span>
+        <span>原画直通 · 智能调度 · 4K HDR 零缓冲</span>
+      </div>
+      <h1 class="hero-title">Funland 智能私有流中枢</h1>
       <p class="hero-desc">
-        绑定个人 115 网盘，通过 Funland 专属 8097 端口透明代理，全自动将 Emby 媒体流拦截并以 302 Found 重定向至 115 官方 CDN 满速拉流，享受 4K HDR 零缓冲体验。
+        无缝接入个人云盘与 Emby 媒体库，基于智能 302 调度直连官方原画 CDN，摆脱服务器中转带宽束缚，尽享丝滑原盘观影。
       </p>
+
+      <!-- 3栏特性微卡片 -->
+      <div class="hero-cards-grid">
+        <div class="hero-micro-card">
+          <div class="micro-card-header">
+            <span class="micro-card-icon">⚡</span>
+            <span class="micro-card-title">全系原生兼容</span>
+          </div>
+          <p class="micro-card-desc">无感透明代理，海报墙、元数据与播放进度原生实时同步</p>
+        </div>
+
+        <div class="hero-micro-card">
+          <div class="micro-card-header">
+            <span class="micro-card-icon">🚀</span>
+            <span class="micro-card-title">官方 CDN 直连</span>
+          </div>
+          <p class="micro-card-desc">毫秒级 302 满速调度，客户端直连原画节点，突破带宽瓶颈</p>
+        </div>
+
+        <div class="hero-micro-card">
+          <div class="micro-card-header">
+            <span class="micro-card-icon">🛡️</span>
+            <span class="micro-card-title">三级智能保障</span>
+          </div>
+          <p class="micro-card-desc">个人盘秒播 + 节点间秒传 + 源盘兜底，全天候播放不中断</p>
+        </div>
+      </div>
     </section>
 
     <!-- 双列网格 -->
@@ -97,13 +128,13 @@
             <button class="copy-btn" onclick="copyServerAddress()">复制完整地址</button>
           </div>
           <div style="font-family: monospace; font-size: 1rem; color: #38bdf8; word-break: break-all; margin-bottom: 14px;" id="embyServerAddress">
-            http://emby.xxfa.de:8097
+            http://localhost:8097
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.85rem;">
             <div style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
               <span style="color: var(--text-muted); display: block; font-size: 0.75rem;">主机名 (Host)</span>
-              <strong style="color: #fff;" id="embyHostOnly">emby.xxfa.de</strong>
+              <strong style="color: #fff;" id="embyHostOnly">localhost</strong>
             </div>
             <div style="background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 8px;">
               <span style="color: var(--text-muted); display: block; font-size: 0.75rem;">代理端口 (Port)</span>
@@ -120,7 +151,7 @@
           </div>
           <div class="step-item">
             <div class="step-number">2</div>
-            <div class="step-content"><strong>填入服务器参数</strong>：主机填入 <code>emby.xxfa.de</code>，端口填入 <code>8097</code>（若开启 HTTPS 勾选 SSL 并填 <code>443</code>）。</div>
+            <div class="step-content"><strong>填入服务器参数</strong>：主机填入当前部署的服务器地址或域名，端口填入 <code>8097</code>（若开启 HTTPS 勾选 SSL 并填 <code>443</code>）。</div>
           </div>
           <div class="step-item">
             <div class="step-number">3</div>
@@ -146,7 +177,7 @@
 
     <!-- 底部架构展示 -->
     <div class="glass-box" style="margin-top: 10px;">
-      <h2 class="box-title"><span>⚡</span> NextEmby Pro 智能三级加速架构</h2>
+      <h2 class="box-title"><span>⚡</span> 智能三级加速调度架构</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 16px;">
         <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px;">
           <div style="color: #34d399; font-weight: 700; margin-bottom: 8px;">STEP 1: 个人网盘秒播 (50ms)</div>
@@ -167,7 +198,7 @@
   </main>
 
   <footer class="footer">
-    Funland &copy; 2026 Powered by NextEmby Architecture | Domain: xxfa.de
+    Funland &copy; 2026 Smart Media Stream Engine
   </footer>
 
   <!-- 用户登录与自主注册弹窗 -->

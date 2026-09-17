@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Funland 管理控制台 - xxfa.de</title>
+  <title>Funland 管理控制台</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -67,7 +67,7 @@
       </div>
       <div style="display: flex; gap: 12px; align-items: center;">
         <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 12px; font-size: 0.8rem;">
-          域名: <strong id="topDomain">xxfa.de</strong>
+          节点: <strong id="topDomain">自动检测</strong>
         </span>
         <button class="btn btn-secondary" onclick="refreshCurrentTab()">
           <span>🔄 刷新</span>
@@ -118,25 +118,25 @@
       <!-- 快捷入口卡片 -->
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>🚀</span> 端口与拓扑架构 (xxfa.de)</h2>
+          <h2 class="panel-title"><span>🚀</span> 服务端口与拓扑架构</h2>
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
             <div style="font-weight: 600; color: #818cf8; margin-bottom: 6px;">🌐 用户中心 (Portal)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">公开入口，供普通用户绑定 115 扫码</div>
-            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://xxfa.de:8098</code>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyPortal">http://localhost:8098</code>
           </div>
 
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
             <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;">🎬 Emby 播放中间件 (Proxy)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">填入客户端（Infuse/Emby）的服务器地址</div>
-            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://emby.xxfa.de:8097</code>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyEmby">http://localhost:8097</code>
           </div>
 
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
             <div style="font-weight: 600; color: #c084fc; margin-bottom: 6px;">🛡️ 管理控制台 (Admin)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">专属后台，管理 Cookie 池与 Emby 密钥</div>
-            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://admin.xxfa.de:8091</code>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyAdmin">http://localhost:8091</code>
           </div>
         </div>
       </div>

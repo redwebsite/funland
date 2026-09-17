@@ -16,19 +16,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // 1. 获取系统信息
 async function loadSystemInfo() {
+  const currentHost = window.location.hostname || 'localhost';
+  const embyPort = 8097;
+  const isLocalOrIp = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.)/.test(currentHost) || /^[0-9.]+$/.test(currentHost);
+
+  // 默认自适应当前访问主机的 8097 端口
+  let displayHost = currentHost;
+  let displayAddress = `http://${currentHost}:${embyPort}`;
+
   try {
     const res = await fetch('/api/info');
     const json = await res.json();
-    if (json.success) {
+    if (json.success && json.data) {
       const data = json.data;
-      if (data.embyServerAddress) {
-        document.getElementById('embyServerAddress').innerText = data.embyServerAddress;
-      }
-      if (data.domain && document.getElementById('embyHostOnly')) {
-        document.getElementById('embyHostOnly').innerText = `emby.${data.domain}`;
+      const port = (data.ports && data.ports.emby) || embyPort;
+      if (data.domain && data.domain !== 'localhost' && !isLocalOrIp) {
+        displayHost = data.domain.startsWith('emby.') ? data.domain : `emby.${data.domain}`;
+        displayAddress = `http://${displayHost}:${port}`;
+      } else {
+        displayAddress = `http://${currentHost}:${port}`;
       }
     }
   } catch (e) { }
+
+  if (document.getElementById('embyServerAddress')) {
+    document.getElementById('embyServerAddress').innerText = displayAddress;
+  }
+  if (document.getElementById('embyHostOnly')) {
+    document.getElementById('embyHostOnly').innerText = displayHost;
+  }
 }
 
 // 1.1 获取注册状态与名额
