@@ -2,20 +2,154 @@
 
 let currentTab = 'dashboard';
 
-// 初始化
-function init() {
+// 通用管理员接口请求封装 (自动携带 Bearer Token 与 401 拦截)
+async function adminFetch(url, options = {}) {
+  const token = localStorage.getItem('funland_admin_token') || '';
+  const headers = Object.assign({}, options.headers || {});
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  options.headers = headers;
+
+  try {
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      localStorage.removeItem('funland_admin_token');
+      showLoginOverlay('管理员认证已过期或未授权，请重新登录');
+    }
+    return res;
+  } catch (err) {
+    console.error('adminFetch error:', err);
+    throw err;
+  }
+}
+
+// 显示与隐藏登录弹窗
+function showLoginOverlay(errMsg = '') {
+  const overlay = document.getElementById('adminLoginOverlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+    overlay.classList.remove('hidden');
+  }
+  const alertBox = document.getElementById('loginErrorAlert');
+  if (alertBox) {
+    if (errMsg) {
+      alertBox.innerText = errMsg;
+      alertBox.style.display = 'block';
+    } else {
+      alertBox.style.display = 'none';
+    }
+  }
+  const badge = document.getElementById('currentAdminBadge');
+  if (badge) badge.innerText = '👤 未登录';
+}
+
+function hideLoginOverlay() {
+  const overlay = document.getElementById('adminLoginOverlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+    overlay.classList.add('hidden');
+  }
+  const alertBox = document.getElementById('loginErrorAlert');
+  if (alertBox) alertBox.style.display = 'none';
+}
+
+// 检查身份状态并初始化
+async function checkAuthAndInit() {
   setupTabs();
-  loadStats();
-  loadEmbySettings();
+
+  const token = localStorage.getItem('funland_admin_token');
+  if (!token) {
+    showLoginOverlay();
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/admin/auth-status', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const json = await res.json();
+    if (json.success && json.authenticated) {
+      hideLoginOverlay();
+      const badge = document.getElementById('currentAdminBadge');
+      if (badge) badge.innerText = `👤 ${json.username || 'admin'}`;
+      refreshCurrentTab();
+    } else {
+      localStorage.removeItem('funland_admin_token');
+      showLoginOverlay('管理员登录已过期，请重新验证身份');
+    }
+  } catch (e) {
+    console.error('Auth verification failed:', e);
+    showLoginOverlay();
+  }
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
+// 管理员登录处理
+async function handleAdminLogin(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  const user = document.getElementById('adminUser').value.trim();
+  const pass = document.getElementById('adminPass').value.trim();
+  const alertBox = document.getElementById('loginErrorAlert');
+  const btn = document.getElementById('btnAdminLogin');
+
+  if (!user || !pass) {
+    if (alertBox) {
+      alertBox.innerText = '请输入管理员账号与密码';
+      alertBox.style.display = 'block';
+    }
+    return;
+  }
+
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerText = '正在验证身份...';
+    }
+    if (alertBox) alertBox.style.display = 'none';
+
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const json = await res.json();
+
+    if (json.success && json.token) {
+      localStorage.setItem('funland_admin_token', json.token);
+      hideLoginOverlay();
+      const badge = document.getElementById('currentAdminBadge');
+      if (badge) badge.innerText = `👤 ${json.username || user}`;
+      showToast('登录成功，欢迎使用 Funland 管理控制台！');
+      refreshCurrentTab();
+    } else {
+      if (alertBox) {
+        alertBox.innerText = json.error || '管理员账号或密码错误';
+        alertBox.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    if (alertBox) {
+      alertBox.innerText = '网络连接异常: ' + err.message;
+      alertBox.style.display = 'block';
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = '⚡ 验证身份并进入';
+    }
+  }
 }
 
-// 选项卡切换
+// 管理员登出
+function handleAdminLogout() {
+  localStorage.removeItem('funland_admin_token');
+  const pass = document.getElementById('adminPass');
+  if (pass) pass.value = '';
+  showLoginOverlay('已安全退出后台');
+  showToast('已安全退出管理后台');
+}
+
+// 侧边栏选项卡切换
 function setupTabs() {
   const navItems = document.querySelectorAll('.nav-item');
   navItems.forEach(item => {
@@ -27,7 +161,9 @@ function setupTabs() {
 }
 
 function switchTab(tab) {
+  if (!tab) return;
   currentTab = tab;
+
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
 
@@ -47,14 +183,22 @@ function switchTab(tab) {
   };
 
   if (titles[tab]) {
-    document.getElementById('tabTitle').innerText = titles[tab][0];
-    document.getElementById('tabDesc').innerText = titles[tab][1];
+    const titleEl = document.getElementById('tabTitle');
+    const descEl = document.getElementById('tabDesc');
+    if (titleEl) titleEl.innerText = titles[tab][0];
+    if (descEl) descEl.innerText = titles[tab][1];
   }
 
   refreshCurrentTab();
 }
 
 function refreshCurrentTab() {
+  const token = localStorage.getItem('funland_admin_token');
+  if (!token) {
+    showLoginOverlay();
+    return;
+  }
+
   if (currentTab === 'dashboard') loadStats();
   else if (currentTab === 'emby') loadEmbySettings();
   else if (currentTab === 'cookie-pool') loadCookiePool();
@@ -67,17 +211,25 @@ function refreshCurrentTab() {
 // 统计接口
 async function loadStats() {
   try {
-    const res = await fetch('/api/admin/stats');
+    const res = await adminFetch('/api/admin/stats');
+    if (!res.ok) return;
     const json = await res.json();
     if (json.success) {
       const d = json.data;
-      document.getElementById('statTodayPlays').innerText = d.todayPlays || 0;
-      document.getElementById('statTotalPlays').innerText = d.totalPlays || 0;
-      document.getElementById('statHitRate').innerText = d.cache ? d.cache.hitRate : '100%';
-      document.getElementById('statActiveKeys').innerText = d.cache ? d.cache.activeKeysCount : 0;
-      document.getElementById('statPoolCount').innerText = d.totalPool || 0;
+      const elToday = document.getElementById('statTodayPlays');
+      const elTotal = document.getElementById('statTotalPlays');
+      const elHitRate = document.getElementById('statHitRate');
+      const elActiveKeys = document.getElementById('statActiveKeys');
+      const elPool = document.getElementById('statPoolCount');
+      if (elToday) elToday.innerText = d.todayPlays || 0;
+      if (elTotal) elTotal.innerText = d.totalPlays || 0;
+      if (elHitRate) elHitRate.innerText = d.cache ? d.cache.hitRate : '100%';
+      if (elActiveKeys) elActiveKeys.innerText = d.cache ? d.cache.activeKeysCount : 0;
+      if (elPool) elPool.innerText = d.totalPool || 0;
+
       const currentHost = window.location.hostname || 'localhost';
-      document.getElementById('topDomain').innerText = currentHost;
+      const topDomain = document.getElementById('topDomain');
+      if (topDomain) topDomain.innerText = currentHost;
 
       // 动态更新拓扑地址
       if (document.getElementById('topologyPortal')) {
@@ -91,27 +243,28 @@ async function loadStats() {
       }
     }
   } catch (e) {
-    showToast('获取统计数据失败: ' + e.message, 'error');
+    console.error('loadStats failed:', e);
   }
 }
 
 // Emby 设置
 async function loadEmbySettings() {
   try {
-    const res = await fetch('/api/admin/settings');
+    const res = await adminFetch('/api/admin/settings');
+    if (!res.ok) return;
     const json = await res.json();
     if (json.success) {
       const s = json.data;
-      if (s.emby_upstream_url) document.getElementById('cfgEmbyUrl').value = s.emby_upstream_url;
-      if (s.emby_api_key) document.getElementById('cfgEmbyKey').value = s.emby_api_key;
-      if (s.acceleration_mode) document.getElementById('cfgAccelMode').value = s.acceleration_mode;
-      if (s.cache_ttl_seconds) document.getElementById('cfgTtl').value = s.cache_ttl_seconds;
+      if (s.emby_upstream_url && document.getElementById('cfgEmbyUrl')) document.getElementById('cfgEmbyUrl').value = s.emby_upstream_url;
+      if (s.emby_api_key && document.getElementById('cfgEmbyKey')) document.getElementById('cfgEmbyKey').value = s.emby_api_key;
+      if (s.acceleration_mode && document.getElementById('cfgAccelMode')) document.getElementById('cfgAccelMode').value = s.acceleration_mode;
+      if (s.cache_ttl_seconds && document.getElementById('cfgTtl')) document.getElementById('cfgTtl').value = s.cache_ttl_seconds;
     }
   } catch (e) { }
 }
 
 async function saveEmbySettings(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const settings = {
     emby_upstream_url: document.getElementById('cfgEmbyUrl').value.trim(),
     emby_api_key: document.getElementById('cfgEmbyKey').value.trim(),
@@ -120,7 +273,7 @@ async function saveEmbySettings(e) {
   };
 
   try {
-    const res = await fetch('/api/admin/settings', {
+    const res = await adminFetch('/api/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ settings })
@@ -139,9 +292,11 @@ async function saveEmbySettings(e) {
 // Cookie 池
 async function loadCookiePool() {
   try {
-    const res = await fetch('/api/admin/cookie-pool');
+    const res = await adminFetch('/api/admin/cookie-pool');
+    if (!res.ok) return;
     const json = await res.json();
     const tbody = document.getElementById('poolTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     if (!json.data || json.data.length === 0) {
@@ -169,13 +324,13 @@ async function loadCookiePool() {
 }
 
 async function addCookieToPool(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const name = document.getElementById('poolName').value.trim();
   const cookie = document.getElementById('poolCookie').value.trim();
 
   showToast('正在验证 115 账号有效性...');
   try {
-    const res = await fetch('/api/admin/cookie-pool', {
+    const res = await adminFetch('/api/admin/cookie-pool', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, cookie })
@@ -196,7 +351,7 @@ async function addCookieToPool(e) {
 async function deleteCookie(id) {
   if (!confirm('确定从资源池移除该账号？')) return;
   try {
-    const res = await fetch(`/api/admin/cookie-pool/${id}`, { method: 'DELETE' });
+    const res = await adminFetch(`/api/admin/cookie-pool/${id}`, { method: 'DELETE' });
     const json = await res.json();
     if (json.success) {
       showToast('已删除');
@@ -208,9 +363,11 @@ async function deleteCookie(id) {
 // 缓存列表
 async function loadCache() {
   try {
-    const res = await fetch('/api/admin/cache');
+    const res = await adminFetch('/api/admin/cache');
+    if (!res.ok) return;
     const json = await res.json();
     const tbody = document.getElementById('cacheTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     const items = json.data && json.data.items ? json.data.items : [];
@@ -235,7 +392,7 @@ async function loadCache() {
 async function flushCache() {
   if (!confirm('确定清空所有直链缓存？清空后下一个播放请求将重新解析')) return;
   try {
-    const res = await fetch('/api/admin/cache/flush', { method: 'POST' });
+    const res = await adminFetch('/api/admin/cache/flush', { method: 'POST' });
     const json = await res.json();
     if (json.success) {
       showToast('缓存已清空');
@@ -247,9 +404,11 @@ async function flushCache() {
 // 文件指纹库
 async function loadFiles() {
   try {
-    const res = await fetch('/api/admin/files');
+    const res = await adminFetch('/api/admin/files');
+    if (!res.ok) return;
     const json = await res.json();
     const tbody = document.getElementById('filesTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     if (!json.data || json.data.length === 0) {
@@ -274,9 +433,11 @@ async function loadFiles() {
 // 播放日志
 async function loadLogs() {
   try {
-    const res = await fetch('/api/admin/logs');
+    const res = await adminFetch('/api/admin/logs');
+    if (!res.ok) return;
     const json = await res.json();
     const tbody = document.getElementById('logsTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     if (!json.data || json.data.length === 0) {
@@ -311,18 +472,20 @@ async function loadLogs() {
 async function loadUsers() {
   try {
     const [usersRes, settingsRes] = await Promise.all([
-      fetch('/api/admin/users'),
-      fetch('/api/admin/settings')
+      adminFetch('/api/admin/users'),
+      adminFetch('/api/admin/settings')
     ]);
+    if (!usersRes.ok || !settingsRes.ok) return;
+
     const usersJson = await usersRes.json();
     const settingsJson = await settingsRes.json();
 
     if (settingsJson.success) {
       const s = settingsJson.data;
-      if (s.allow_registration !== undefined) {
+      if (s.allow_registration !== undefined && document.getElementById('cfgAllowReg')) {
         document.getElementById('cfgAllowReg').value = s.allow_registration;
       }
-      if (s.max_users_limit !== undefined) {
+      if (s.max_users_limit !== undefined && document.getElementById('cfgMaxUsers')) {
         document.getElementById('cfgMaxUsers').value = s.max_users_limit;
       }
 
@@ -330,17 +493,21 @@ async function loadUsers() {
       const maxLimit = parseInt(s.max_users_limit || '200', 10);
       const percent = Math.min(100, Math.round((currentCount / maxLimit) * 100));
 
-      document.getElementById('userQuotaText').innerText = `${currentCount} / ${maxLimit} (${percent}%)`;
+      const quotaText = document.getElementById('userQuotaText');
+      if (quotaText) quotaText.innerText = `${currentCount} / ${maxLimit} (${percent}%)`;
       const bar = document.getElementById('userQuotaBar');
-      bar.style.width = `${percent}%`;
-      if (percent >= 100) {
-        bar.style.background = 'linear-gradient(90deg, #ef4444, #f97316)';
-      } else {
-        bar.style.background = 'linear-gradient(90deg, #6366f1, #a855f7)';
+      if (bar) {
+        bar.style.width = `${percent}%`;
+        if (percent >= 100) {
+          bar.style.background = 'linear-gradient(90deg, #ef4444, #f97316)';
+        } else {
+          bar.style.background = 'linear-gradient(90deg, #6366f1, #a855f7)';
+        }
       }
     }
 
     const tbody = document.getElementById('usersTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
 
     if (!usersJson.data || usersJson.data.length === 0) {
@@ -374,12 +541,12 @@ async function loadUsers() {
 }
 
 async function saveRegSettings(e) {
-  e.preventDefault();
+  if (e && e.preventDefault) e.preventDefault();
   const allow_registration = document.getElementById('cfgAllowReg').value;
   const max_users_limit = document.getElementById('cfgMaxUsers').value.trim();
 
   try {
-    const res = await fetch('/api/admin/settings', {
+    const res = await adminFetch('/api/admin/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -403,7 +570,7 @@ async function saveRegSettings(e) {
 
 async function toggleUser(id) {
   try {
-    const res = await fetch(`/api/admin/users/${id}/toggle`, { method: 'POST' });
+    const res = await adminFetch(`/api/admin/users/${id}/toggle`, { method: 'POST' });
     const json = await res.json();
     if (json.success) {
       showToast(json.msg || '状态已更改');
@@ -415,7 +582,7 @@ async function toggleUser(id) {
 async function deleteUserAccount(id) {
   if (!confirm('确定彻底删除该用户账号？')) return;
   try {
-    const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+    const res = await adminFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
     const json = await res.json();
     if (json.success) {
       showToast('用户已删除');
@@ -427,6 +594,7 @@ async function deleteUserAccount(id) {
 // 工具函数
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toastContainer');
+  if (!container) return;
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.innerHTML = `<span>${type === 'error' ? '❌' : '⚡'}</span><span>${escapeHtml(msg)}</span>`;
@@ -454,4 +622,26 @@ function formatBytes(bytes) {
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// 导出全局函数供内联 HTML 事件调用
+window.switchTab = switchTab;
+window.refreshCurrentTab = refreshCurrentTab;
+window.handleAdminLogin = handleAdminLogin;
+window.handleAdminLogout = handleAdminLogout;
+window.saveEmbySettings = saveEmbySettings;
+window.addCookieToPool = addCookieToPool;
+window.deleteCookie = deleteCookie;
+window.flushCache = flushCache;
+window.loadFiles = loadFiles;
+window.loadLogs = loadLogs;
+window.saveRegSettings = saveRegSettings;
+window.toggleUser = toggleUser;
+window.deleteUserAccount = deleteUserAccount;
+
+// 启动入口
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', checkAuthAndInit);
+} else {
+  checkAuthAndInit();
 }

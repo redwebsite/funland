@@ -17,6 +17,7 @@ services:
       - EMBY_UPSTREAM_URL=${EMBY_UPSTREAM_URL:-https://xart.fun:443}
       - CACHE_TTL_SECONDS=${CACHE_TTL_SECONDS:-1800}
     volumes:
+      - ./src:/app/src
       - ./data:/app/data
       - ./logs:/app/logs
 

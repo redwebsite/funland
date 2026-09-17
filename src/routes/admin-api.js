@@ -4,7 +4,71 @@ const cacheScheduler = require('../modules/cache-scheduler');
 const openApi115 = require('../modules/openapi-115');
 const config = require('../config');
 
+const crypto = require('crypto');
+
 const router = express.Router();
+
+function generateToken(username) {
+  const payload = `${username}:${Date.now()}`;
+  const signature = crypto.createHmac('sha256', config.admin.jwtSecret).update(payload).digest('hex');
+  return Buffer.from(`${payload}:${signature}`).toString('base64');
+}
+
+function verifyToken(token) {
+  if (!token) return false;
+  try {
+    const raw = Buffer.from(token, 'base64').toString('utf8');
+    const [username, timestamp, signature] = raw.split(':');
+    if (!username || !timestamp || !signature) return false;
+    if (Date.now() - parseInt(timestamp, 10) > 7 * 24 * 3600 * 1000) return false;
+    const expected = crypto.createHmac('sha256', config.admin.jwtSecret).update(`${username}:${timestamp}`).digest('hex');
+    return signature === expected && username === config.admin.username;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 0. 管理员登录
+router.post('/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: '账号和密码不能为空' });
+  }
+
+  if (username === config.admin.username && password === config.admin.password) {
+    const token = generateToken(username);
+    return res.json({
+      success: true,
+      token,
+      username: config.admin.username,
+      msg: '登录成功'
+    });
+  }
+
+  return res.status(401).json({ success: false, error: '管理员账号或密码错误' });
+});
+
+// 0.1 验证登录态
+router.get('/auth-status', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : (req.query.token || '');
+  const isValid = verifyToken(token);
+  res.json({
+    success: true,
+    authenticated: isValid,
+    username: isValid ? config.admin.username : null
+  });
+});
+
+// 权限拦截中间件（除 login / auth-status 外均需有效 token）
+router.use((req, res, next) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : (req.query.token || '');
+  if (!verifyToken(token)) {
+    return res.status(401).json({ success: false, error: '请先登录管理员账号' });
+  }
+  next();
+});
 
 // 1. 系统数据统计
 router.get('/stats', (req, res) => {

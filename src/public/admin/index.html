@@ -22,39 +22,45 @@
     </div>
 
     <nav class="nav-menu">
-      <div class="nav-item active" data-tab="dashboard">
+      <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
         <span class="nav-icon">📊</span>
         <span>系统总览</span>
       </div>
-      <div class="nav-item" data-tab="emby">
+      <div class="nav-item" data-tab="emby" onclick="switchTab('emby')">
         <span class="nav-icon">⚙️</span>
         <span>Emby 服务设置</span>
       </div>
-      <div class="nav-item" data-tab="cookie-pool">
+      <div class="nav-item" data-tab="cookie-pool" onclick="switchTab('cookie-pool')">
         <span class="nav-icon">🍪</span>
         <span>115 账号资源池</span>
       </div>
-      <div class="nav-item" data-tab="cache">
+      <div class="nav-item" data-tab="cache" onclick="switchTab('cache')">
         <span class="nav-icon">⚡</span>
         <span>滑动过期缓存</span>
       </div>
-      <div class="nav-item" data-tab="files">
+      <div class="nav-item" data-tab="files" onclick="switchTab('files')">
         <span class="nav-icon">📁</span>
         <span>文件与 SHA1 库</span>
       </div>
-      <div class="nav-item" data-tab="users">
+      <div class="nav-item" data-tab="users" onclick="switchTab('users')">
         <span class="nav-icon">👥</span>
         <span>用户管理与配额</span>
       </div>
-      <div class="nav-item" data-tab="logs">
+      <div class="nav-item" data-tab="logs" onclick="switchTab('logs')">
         <span class="nav-icon">📜</span>
         <span>播放拦截日志</span>
       </div>
     </nav>
 
     <div class="sidebar-footer">
-      <span>服务状态</span>
-      <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 6px;">
+        <span id="currentAdminBadge" style="font-weight: 600; color: #818cf8; font-size: 0.82rem;">👤 admin</span>
+        <button onclick="handleAdminLogout()" style="background: none; border: none; color: #f87171; cursor: pointer; font-size: 0.78rem;" title="退出登录">退出</button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+        <span>服务状态</span>
+        <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
+      </div>
     </div>
   </aside>
 
@@ -368,6 +374,32 @@
       </div>
     </section>
   </main>
+
+  <!-- 管理员登录锁屏弹窗 -->
+  <div id="adminLoginOverlay" class="admin-login-overlay" style="display: flex;">
+    <div class="admin-login-card">
+      <div class="admin-login-brand">
+        <img src="images/logo.jpg" alt="Funland" class="admin-login-logo" onerror="this.onerror=null; this.src='https://i.funto.fun/file/1789651192414_2026-02-14_11.45.10.jpg'">
+        <h2 class="admin-login-title">Funland 管理控制台</h2>
+        <p class="admin-login-subtitle">请输入管理员凭据以解锁控制面板</p>
+      </div>
+
+      <form id="adminLoginForm" onsubmit="handleAdminLogin(event)">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label class="form-label" style="margin-bottom: 6px;">管理员账号</label>
+          <input type="text" id="adminUser" required placeholder="admin" autocomplete="username">
+        </div>
+        <div class="form-group" style="margin-bottom: 20px;">
+          <label class="form-label" style="margin-bottom: 6px;">管理员密码</label>
+          <input type="password" id="adminPass" required placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="loginErrorAlert" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171;"></div>
+        <button type="submit" id="btnAdminLogin" class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; font-size: 0.95rem; font-weight: 700; border-radius: 10px;">
+          ⚡ 验证身份并进入
+        </button>
+      </form>
+    </div>
+  </div>
 
   <div class="toast-container" id="toastContainer"></div>
 
