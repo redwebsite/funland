@@ -53,11 +53,20 @@
     </nav>
 
     <div class="sidebar-footer">
-      <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 8px;">
-        <span id="currentAdminBadge" style="font-weight: 600; color: #818cf8; font-size: 0.82rem;">👤 admin</span>
-        <button onclick="handleAdminLogout()" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); color: #f87171; cursor: pointer; font-size: 0.75rem; padding: 2px 8px; border-radius: 6px; transition: all 0.2s;" title="退出登录">退出</button>
+      <div class="admin-profile-row">
+        <div class="admin-profile-info">
+          <span class="admin-avatar">👤</span>
+          <span id="currentAdminBadge" class="admin-badge-name">admin</span>
+        </div>
+        <button onclick="handleAdminLogout()" class="btn-sidebar-logout" title="退出管理后台">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+        </button>
       </div>
-      <div style="display: flex; align-items: center; justify-content: flex-start; width: 100%;">
+      <div class="server-status-center">
         <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
       </div>
     </div>

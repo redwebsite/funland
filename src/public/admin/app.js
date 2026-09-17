@@ -231,15 +231,36 @@ async function loadStats() {
       const topDomain = document.getElementById('topDomain');
       if (topDomain) topDomain.innerText = currentHost;
 
-      // 动态更新拓扑地址
+      // 智能动态生成拓扑地址 (自适应反向代理及标准端口)
+      const isHttps = window.location.protocol === 'https:';
+      const proto = isHttps ? 'https:' : 'http:';
+      const port = window.location.port;
+      const isCustomPort = Boolean(port && port !== '80' && port !== '443');
+
+      // 1. 用户中心地址
+      const portalBase = isCustomPort ? `${proto}//${currentHost}:${port}` : `${proto}//${currentHost}`;
       if (document.getElementById('topologyPortal')) {
-        document.getElementById('topologyPortal').innerText = `http://${currentHost}:${d.ports ? d.ports.portal : 8098}`;
+        document.getElementById('topologyPortal').innerText = `${portalBase}/`;
+      }
+
+      // 2. 管理后台地址
+      const adminBase = isCustomPort && port === '8091'
+        ? `${proto}//${currentHost}:8091/`
+        : `${portalBase}/admin/`;
+      if (document.getElementById('topologyAdmin')) {
+        document.getElementById('topologyAdmin').innerText = adminBase;
+      }
+
+      // 3. Emby 播放代理地址
+      let embyUrl;
+      if (isHttps && !isCustomPort) {
+        const baseRoot = currentHost.replace(/^(admin|portal)\./, '');
+        embyUrl = `https://emby.${baseRoot} (或 http://${currentHost}:8097)`;
+      } else {
+        embyUrl = `http://${currentHost}:${d.ports ? d.ports.emby : 8097}`;
       }
       if (document.getElementById('topologyEmby')) {
-        document.getElementById('topologyEmby').innerText = `http://${currentHost}:${d.ports ? d.ports.emby : 8097}`;
-      }
-      if (document.getElementById('topologyAdmin')) {
-        document.getElementById('topologyAdmin').innerText = `http://${currentHost}:${d.ports ? d.ports.admin : 8091}`;
+        document.getElementById('topologyEmby').innerText = embyUrl;
       }
     }
   } catch (e) {
