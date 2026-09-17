@@ -7,8 +7,10 @@
 # 3. emby.{$BASE_DOMAIN}   -> 8097 (Emby 302 流拦截与反代端口)
 # ==============================================================================
 
-# 自动证书申请管理员邮箱
-{$ADMIN_EMAIL:admin@example.com}
+# 全局配置
+{
+    email {$ADMIN_EMAIL:admin@example.com}
+}
 
 # 1. 用户端公开门户 (8098 端口)
 {$BASE_DOMAIN:localhost} {
