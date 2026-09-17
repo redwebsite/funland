@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  funland:
+    build: .
+    container_name: funland
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - TZ=Asia/Shanghai
+      - BASE_DOMAIN=xxfa.de
+      - PORT_PORTAL=8098
+      - PORT_ADMIN=8091
+      - PORT_EMBY=8097
+      - EMBY_UPSTREAM_URL=https://xart.fun:443
+      - CACHE_TTL_SECONDS=1800
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs/caddy:/var/log/caddy
+
+volumes:
+  caddy_data:
+  caddy_config:

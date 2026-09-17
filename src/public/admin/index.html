@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Funland 管理控制台 - xxfa.de</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 侧边导航栏 -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">⚡</div>
+      <div>
+        <div class="brand-title">Funland</div>
+        <div class="brand-subtitle">ADMIN CONSOLE</div>
+      </div>
+    </div>
+
+    <nav class="nav-menu">
+      <div class="nav-item active" data-tab="dashboard">
+        <span class="nav-icon">📊</span>
+        <span>系统总览</span>
+      </div>
+      <div class="nav-item" data-tab="emby">
+        <span class="nav-icon">⚙️</span>
+        <span>Emby 服务设置</span>
+      </div>
+      <div class="nav-item" data-tab="cookie-pool">
+        <span class="nav-icon">🍪</span>
+        <span>115 账号资源池</span>
+      </div>
+      <div class="nav-item" data-tab="cache">
+        <span class="nav-icon">⚡</span>
+        <span>滑动过期缓存</span>
+      </div>
+      <div class="nav-item" data-tab="files">
+        <span class="nav-icon">📁</span>
+        <span>文件与 SHA1 库</span>
+      </div>
+      <div class="nav-item" data-tab="logs">
+        <span class="nav-icon">📜</span>
+        <span>播放拦截日志</span>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <span>服务状态</span>
+      <span class="status-badge"><span class="status-dot"></span> 8091 在线</span>
+    </div>
+  </aside>
+
+  <!-- 主工作区 -->
+  <main class="main-content">
+    <!-- 顶部状态栏 -->
+    <header class="top-bar">
+      <div>
+        <h1 class="page-title" id="tabTitle">系统总览</h1>
+        <p class="page-desc" id="tabDesc">Funland 实时运行指标、Emby 拦截率及云端直链调度状态</p>
+      </div>
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 12px; font-size: 0.8rem;">
+          域名: <strong id="topDomain">xxfa.de</strong>
+        </span>
+        <button class="btn btn-secondary" onclick="refreshCurrentTab()">
+          <span>🔄 刷新</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 选项卡 1: 系统总览 -->
+    <section id="tab-dashboard" class="tab-section active">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">今日 302 重定向</span>
+            <div class="stat-icon-wrapper">🎬</div>
+          </div>
+          <div class="stat-value" id="statTodayPlays">0</div>
+          <div class="stat-footer">累计拦截: <span id="statTotalPlays">0</span> 次</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">30分钟缓存命中率</span>
+            <div class="stat-icon-wrapper">⚡</div>
+          </div>
+          <div class="stat-value" id="statHitRate">100%</div>
+          <div class="stat-footer">当前活跃缓存: <span id="statActiveKeys">0</span> 个</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">115 账号资源池</span>
+            <div class="stat-icon-wrapper">🍪</div>
+          </div>
+          <div class="stat-value" id="statPoolCount">0</div>
+          <div class="stat-footer">兜底源盘与秒传节点</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">已索引媒体文件</span>
+            <div class="stat-icon-wrapper">📁</div>
+          </div>
+          <div class="stat-value" id="statIndexedFiles">0</div>
+          <div class="stat-footer">本地 SHA1 秒传指纹库</div>
+        </div>
+      </div>
+
+      <!-- 快捷入口卡片 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>🚀</span> 端口与拓扑架构 (xxfa.de)</h2>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+          <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
+            <div style="font-weight: 600; color: #818cf8; margin-bottom: 6px;">🌐 用户中心 (Portal)</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">公开入口，供普通用户绑定 115 扫码</div>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://xxfa.de:8098</code>
+          </div>
+
+          <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
+            <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;">🎬 Emby 播放中间件 (Proxy)</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">填入客户端（Infuse/Emby）的服务器地址</div>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://emby.xxfa.de:8097</code>
+          </div>
+
+          <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
+            <div style="font-weight: 600; color: #c084fc; margin-bottom: 6px;">🛡️ 管理控制台 (Admin)</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">专属后台，管理 Cookie 池与 Emby 密钥</div>
+            <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;">http://admin.xxfa.de:8091</code>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡 2: Emby 服务设置 -->
+    <section id="tab-emby" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>⚙️</span> Emby 服务连接与拦截策略</h2>
+        </div>
+        <form id="embySettingsForm" onsubmit="saveEmbySettings(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">上游 Emby 服务器地址 (Upstream URL)</label>
+              <input type="text" class="form-input" id="cfgEmbyUrl" placeholder="https://xart.fun:443" required>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">输入真实的 Emby 原始服务器 URL</small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Emby 管理员 API Key (可选)</label>
+              <input type="text" class="form-input" id="cfgEmbyKey" placeholder="例如: 8e5f29d10a...">
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">用于中间件自主向 Emby 查询视频文件物理路径与文件名</small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">加速调度策略</label>
+              <select class="form-select" id="cfgAccelMode">
+                <option value="PRO">Pro 模式 (推荐: 用户自持 -> 用户间互传 -> 源网盘兜底)</option>
+                <option value="NORMAL">Normal 模式 (仅源网盘秒传直链)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">直链滑动过期时间 (秒)</label>
+              <input type="number" class="form-input" id="cfgTtl" value="1800" min="300" max="86400">
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">默认 1800 秒（30分钟）。在此期间用户每次播放均重置 30 分钟</small>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存 Emby 配置</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 选项卡 3: 115 账号资源池 -->
+    <section id="tab-cookie-pool" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>🍪</span> 添加 115 账号至资源池 (源盘 / 公共转存)</h2>
+        </div>
+        <form id="addPoolForm" onsubmit="addCookieToPool(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">账号标识名称</label>
+              <input type="text" class="form-input" id="poolName" placeholder="例如: 主库源盘-01" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label">115 Cookie 字符串</label>
+              <input type="text" class="form-input" id="poolCookie" placeholder="UID=...; CID=...; SEID=..." required>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">➕ 校验并添加至资源池</button>
+        </form>
+      </div>
+
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>📋</span> 已激活的 115 账号列表</h2>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>标识名称</th>
+                <th>VIP/类型</th>
+                <th>Cookie 摘要</th>
+                <th>状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="poolTableBody">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">加载中...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡 4: 滑动过期缓存 -->
+    <section id="tab-cache" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>⚡</span> 30分钟滑动过期缓存状态</h2>
+          <button class="btn btn-danger" onclick="flushCache()">🗑️ 清空所有缓存</button>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>缓存键 (Key)</th>
+                <th>剩余有效时间 (秒)</th>
+                <th>写入时间</th>
+                <th>直链预览</th>
+              </tr>
+            </thead>
+            <tbody id="cacheTableBody">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">暂无活动缓存</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡 5: 文件与 SHA1 库 -->
+    <section id="tab-files" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>📁</span> 本地媒体 SHA1 秒传指纹库</h2>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>媒体文件名</th>
+                <th>SHA1 指纹</th>
+                <th>大小</th>
+                <th>累计播放</th>
+                <th>最后播放时间</th>
+              </tr>
+            </thead>
+            <tbody id="filesTableBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">暂无索引记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡 6: 播放拦截日志 -->
+    <section id="tab-logs" class="tab-section">
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><span>📜</span> 实时播放拦截与 302 重定向日志</h2>
+          <button class="btn btn-secondary" onclick="loadLogs()">🔄 刷新日志</button>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>媒体 ID / 名称</th>
+                <th>用户</th>
+                <th>来源 IP</th>
+                <th>加速链路模式</th>
+                <th>结果 / 302 目标</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody">
+              <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">暂无播放请求记录</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

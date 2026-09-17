@@ -1,0 +1,79 @@
+# Funland (次世代 Emby + 115 云盘智能加速网关)
+
+> 🚀 **基于 NextEmby 架构与 reverse-skill 逆向思想重构**  
+> 专为网盘媒体库设计的智能加速系统，彻底解决网盘直连播放限制与风控问题。  
+> 目标部署域名：`xxfa.de`
+
+---
+
+## 🌟 核心功能
+
+1. **Emby 播放请求中间件 (8097 端口)**
+   - 拦截客户端 `/Videos/{Id}/stream`、`/Videos/{Id}/original`、`/Items/{Id}/Download` 请求并返回 `302 Found` 重定向至 115 官方 CDN。
+   - 保留 Emby 完整元数据、海报墙与播放进度同步。
+   - 若 115 节点未命中或出现异常，自动平滑透明回退至真实 Emby 原始串流，播放 100% 不中断。
+
+2. **115 OpenAPI 模块**
+   - **官方扫码登录**：完整实现 115 Web/App 二维码握手轮询（等待扫码 -> 确认登录 -> 自动换取 Cookies）。
+   - **下载直链解析**：毫秒级调用 115 官方直链 API 获取高速 CDN 下载地址。
+   - **SHA1 秒传转存**：调用 115 `initupload` 接口，支持零流量跨账号秒级转存。
+
+3. **三级智能加速调度器 (Pro 模式)**
+   - **STEP 1 (50ms)**：播放用户个人 115 网盘快速匹配，命中直接取直链。
+   - **STEP 2 (5ms)**：本地 SQLite 搜索最近播放过该 SHA1 的其他用户，自动跨用户秒传。
+   - **STEP 3**：系统 Cookie 池（源网盘）兜底秒传保障。
+
+4. **30 分钟滑动过期缓存调度器**
+   - 采用 1800 秒（30分钟）滑动过期窗口（Sliding Expiration Cache）。
+   - 用户拖拽进度条或重新播放时，自动重置 30 分钟生命周期，杜绝频繁请求 115 接口引起风控。
+
+5. **现代双端控制台 (8091 管理端 / 8098 用户端)**
+   - **管理控制台 (`admin.xxfa.de:8091`)**：实时拦截指标、Cookie 资源池管理、Emby 上游设置、活动缓存查看、实时日志。
+   - **用户门户 (`xxfa.de:8098`)**：115 手机 App 一键扫码授权、客户端（Infuse / VidHub / Emby）一键复制连接引导。
+
+---
+
+## 📐 网络与端口拓扑 (`xxfa.de`)
+
+| 域名 | 目标端口 | 说明 | 访问对象 |
+|---|---|---|---|
+| `xxfa.de` / `www.xxfa.de` | **8098** | 用户中心与公开门户（115 扫码绑定） | 普通用户 / 公开 |
+| `admin.xxfa.de` | **8091** | 管理控制台（Cookie 池、Emby 设置、日志） | 管理员 |
+| `emby.xxfa.de` | **8097** | Emby 播放代理中间件（302 直链重定向） | Infuse / VidHub / 播放器 |
+
+---
+
+## ⚡ 快速启动（本地开发）
+
+```bash
+# 1. 进入项目目录
+cd "/Users/wangshiyi/Desktop/W/Github Reps/funland"
+
+# 2. 安装依赖
+npm install
+
+# 3. 启动服务 (同时拉起 8098, 8091, 8097)
+npm start
+```
+
+启动后可在本地浏览器访问：
+- 🌐 **用户中心**：http://localhost:8098
+- 🛡️ **管理控制台**：http://localhost:8091 (或 http://localhost:8098/admin)
+- 🎬 **Emby 代理**：http://localhost:8097
+
+---
+
+## 🐳 服务器一键部署 (Docker + Caddy)
+
+### 1. Cloudflare DNS 解析设置
+在 Cloudflare 中将 `xxfa.de` 解析至你的服务器 IP（开启橙色云朵代理）：
+- `A @ -> <服务器IP>`
+- `A www -> <服务器IP>`
+- `A admin -> <服务器IP>`
+- `A emby -> <服务器IP>`
+
+### 2. 运行容器
+```bash
+docker-compose up -d
+```
+Caddy 将自动申请并配置 Let's Encrypt SSL 证书，并安全反代 8098、8091 与 8097 端口。

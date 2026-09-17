@@ -1,0 +1,65 @@
+# ==============================================================================
+# Funland Caddy 反向代理配置 (域名: xxfa.de)
+# ==============================================================================
+# 架构分配：
+# 1. xxfa.de, www.xxfa.de  -> 8098 (用户中心与公开门户)
+# 2. admin.xxfa.de        -> 8091 (管理控制台，支持 Basic Auth 防护)
+# 3. emby.xxfa.de         -> 8097 (Emby 302 流拦截与反代端口)
+# ==============================================================================
+
+# 自动证书申请管理员邮箱
+{$ADMIN_EMAIL:admin@xxfa.de}
+
+# 1. 用户端公开门户 (8098 端口)
+xxfa.de, www.xxfa.de {
+    reverse_proxy 127.0.0.1:8098 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up Host {host}
+    }
+    encode zstd gzip
+    log {
+        output file /var/log/caddy/portal.log {
+            roll_size 20mb
+            roll_keep 5
+        }
+    }
+}
+
+# 2. 管理控制台 (8091 端口)
+admin.xxfa.de {
+    # 如需在 Caddy 层增加二次密码防护，取消下方 basicauth 注释即可
+    # basicauth {
+    #     admin $2a$14$...
+    # }
+    reverse_proxy 127.0.0.1:8091 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up Host {host}
+    }
+    encode zstd gzip
+    log {
+        output file /var/log/caddy/admin.log {
+            roll_size 20mb
+            roll_keep 5
+        }
+    }
+}
+
+# 3. Emby 播放代理 (8097 端口)
+emby.xxfa.de {
+    reverse_proxy 127.0.0.1:8097 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+        header_up Host {host}
+        header_up Upgrade {>Upgrade}
+        header_up Connection {>Connection}
+    }
+    encode zstd gzip
+    log {
+        output file /var/log/caddy/emby.log {
+            roll_size 20mb
+            roll_keep 5
+        }
+    }
+}
