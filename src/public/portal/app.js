@@ -342,9 +342,15 @@ async function pollQrStatus() {
       if (dot) dot.innerText = '✅';
       if (text) text.innerText = `授权成功！已绑定至用户: ${targetUser}`;
       if (badge) badge.className = 'qr-status-badge success';
+      // 立即无缝切换到图片 2 的网盘设置与秒存文件夹面板
+      showDriveSettingsPanel({
+        uid: json.uid115 || '',
+        saveDir: '/EmbyCache11',
+        data: { spaceTotal: '5 TB' }
+      });
       setTimeout(() => {
         checkUserDriveStatus();
-      }, 1000);
+      }, 500);
     } else if (json.status === 'expired') {
       clearInterval(qrPollTimer);
       if (dot) dot.innerText = '❌';
@@ -394,6 +400,11 @@ async function submitManualCookie() {
     const json = await res.json();
     if (json.success) {
       alert(json.msg || '绑定成功！');
+      showDriveSettingsPanel({
+        uid: (json.data && (json.data.uid115 || json.data.userId)) || '',
+        saveDir: (json.data && json.data.saveDir) || '/EmbyCache11',
+        data: json.data || { spaceTotal: '5 TB' }
+      });
       checkUserDriveStatus();
     } else {
       alert(json.error || '绑定失败，请检查 Cookie 完整性');

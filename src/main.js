@@ -21,11 +21,24 @@ portalApp.use(morgan('short'));
 // 挂载 API
 portalApp.use('/api', userRouter);
 
+// 静态前端资源配置：严格禁止浏览器与代理CDN强缓存 HTML/JS/CSS，保障每次发布即时生效
+const staticOptions = {
+  etag: false,
+  maxAge: 0,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+};
+
 // 静态前端资源 (用户门户)
-portalApp.use(express.static(path.join(__dirname, 'public/portal')));
+portalApp.use(express.static(path.join(__dirname, 'public/portal'), staticOptions));
 
 // 本地便利路由：允许在 8098 端口直接通过 /admin 访问管理后台
-portalApp.use('/admin', express.static(path.join(__dirname, 'public/admin')));
+portalApp.use('/admin', express.static(path.join(__dirname, 'public/admin'), staticOptions));
 portalApp.use('/api/admin', adminRouter);
 
 // 健康检查端点
@@ -48,7 +61,7 @@ adminApp.use('/api/admin', adminRouter);
 adminApp.use('/api', userRouter); // 方便管理端测试扫码
 
 // 静态前端资源 (管理控制台)
-adminApp.use(express.static(path.join(__dirname, 'public/admin')));
+adminApp.use(express.static(path.join(__dirname, 'public/admin'), staticOptions));
 
 // 首页重定向与健康检查
 adminApp.get('/health', (req, res) => {

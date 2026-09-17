@@ -218,8 +218,12 @@ router.post('/users/:id/toggle', (req, res) => {
 
 // 14. 删除用户
 router.delete('/users/:id', (req, res) => {
-  dbService.deleteUser(req.params.id);
-  res.json({ success: true, msg: '用户已删除' });
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    return res.status(400).json({ success: false, error: '用户 ID 参数无效' });
+  }
+  dbService.deleteUser(id);
+  res.json({ success: true, msg: `用户 #${id} 已成功删除` });
 });
 
 module.exports = router;
