@@ -257,19 +257,23 @@ function toggleDriveEditMode(showEdit) {
   }
 }
 
-async function saveDriveSettings() {
+async function saveDriveSettings(customCid = null, customDir = null) {
   const targetUser = currentUser || 'guest_user';
   const input = document.getElementById('driveSaveDirInput');
   const toast = document.getElementById('driveSaveToast');
-  let rawDir = input ? input.value.trim() : 'EmbyCache11';
+  let rawDir = customDir || (input ? input.value.trim() : 'EmbyCache11');
   if (!rawDir) rawDir = 'EmbyCache11';
   const cleanDir = rawDir.startsWith('/') ? rawDir : '/' + rawDir;
 
   try {
+    const payload = { username: targetUser, saveDir: cleanDir };
+    if (customCid !== null && typeof customCid !== 'undefined') {
+      payload.saveCid = String(customCid);
+    }
     const res = await fetch('/api/user/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: targetUser, saveDir: cleanDir })
+      body: JSON.stringify(payload)
     });
     const json = await res.json();
     if (json.success) {
@@ -279,11 +283,14 @@ async function saveDriveSettings() {
         toast.style.display = 'block';
         setTimeout(() => { toast.style.display = 'none'; }, 3000);
       }
+      return true;
     } else {
       alert(json.error || '保存失败');
+      return false;
     }
   } catch (e) {
     alert('保存异常: ' + e.message);
+    return false;
   }
 }
 
@@ -342,7 +349,7 @@ async function pollQrStatus() {
       if (dot) dot.innerText = '✅';
       if (text) text.innerText = `授权成功！已绑定至用户: ${targetUser}`;
       if (badge) badge.className = 'qr-status-badge success';
-      // 立即无缝切换到图片 2 的网盘设置与秒存文件夹面板
+      // 立即无缝切换到网盘设置面板
       showDriveSettingsPanel({
         uid: json.uid115 || '',
         saveDir: '/EmbyCache11',
@@ -350,7 +357,9 @@ async function pollQrStatus() {
       });
       setTimeout(() => {
         checkUserDriveStatus();
-      }, 500);
+        // 核心对齐 NextEmby 体验：扫码后直接自动弹出秒传文件夹选择器，让用户一键点击选择目标文件夹！
+        openFolderPicker(true);
+      }, 600);
     } else if (json.status === 'expired') {
       clearInterval(qrPollTimer);
       if (dot) dot.innerText = '❌';
@@ -406,6 +415,9 @@ async function submitManualCookie() {
         data: json.data || { spaceTotal: '5 TB' }
       });
       checkUserDriveStatus();
+      setTimeout(() => {
+        openFolderPicker(true);
+      }, 600);
     } else {
       alert(json.error || '绑定失败，请检查 Cookie 完整性');
     }
@@ -434,6 +446,221 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// ==================== 115 交互式文件夹选择器 (NextEmby 对齐) ====================
+let currentPickerCid = '0';
+let currentPickerPath = [{ cid: '0', name: '根目录' }];
+let selectedFolderState = { cid: '0', name: '根目录', fullPath: '/' };
+
+function openFolderPicker(autoPrompt = false) {
+  const modal = document.getElementById('folderPickerModal');
+  if (!modal) return;
+
+  const title = document.getElementById('folderPickerTitle');
+  const sub = document.getElementById('folderPickerSubtitle');
+
+  if (autoPrompt) {
+    if (title) title.innerText = '🎉 115 授权成功！请选择秒存文件夹';
+    if (sub) sub.innerText = '请点击选择已存在的网盘文件夹，作为后续播放秒传转存的存储位置';
+  } else {
+    if (title) title.innerText = '选择 115 秒存文件夹';
+    if (sub) sub.innerText = '点击目录进入下级，或直接点击「选定」设为默认秒存路径';
+  }
+
+  modal.style.display = 'flex';
+  loadUserFolders('0');
+}
+
+function closeFolderPicker() {
+  const modal = document.getElementById('folderPickerModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function loadUserFolders(cid = '0') {
+  const container = document.getElementById('folderListContainer');
+  const targetUser = currentUser || 'guest_user';
+  currentPickerCid = String(cid || '0');
+
+  if (container) {
+    container.innerHTML = `
+      <div class="folder-loading">
+        <div class="spinner-small"></div>
+        <span>正在读取 115 网盘目录...</span>
+      </div>
+    `;
+  }
+
+  try {
+    const res = await fetch(`/api/115/folders?username=${encodeURIComponent(targetUser)}&cid=${encodeURIComponent(currentPickerCid)}`);
+    const json = await res.json();
+
+    if (!json.success) {
+      if (container) {
+        container.innerHTML = `
+          <div class="folder-empty">
+            <span style="font-size: 2rem;">⚠️</span>
+            <span>读取网盘文件夹失败: ${escapeHtml(json.error || '未知错误')}</span>
+            <button class="btn-tool-pill" onclick="loadUserFolders('${currentPickerCid}')" style="margin-top: 8px;">重试</button>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    currentPickerPath = json.path || [{ cid: '0', name: '根目录' }];
+    renderBreadcrumbs(currentPickerPath);
+
+    // 默认选定当前所在目录
+    const currPathStr = json.fullPath || '/';
+    const currDirName = currentPickerPath.length > 1 ? currentPickerPath[currentPickerPath.length - 1].name : '根目录';
+    selectFolder(currentPickerCid, currDirName, currPathStr);
+
+    const folders = json.folders || [];
+    if (folders.length === 0) {
+      if (container) {
+        container.innerHTML = `
+          <div class="folder-empty">
+            <span style="font-size: 2rem;">📂</span>
+            <span>当前目录下没有子文件夹</span>
+            <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">您可以点击上方「➕ 新建文件夹」或直接点击下方「确定使用此目录」</p>
+          </div>
+        `;
+      }
+      return;
+    }
+
+    let html = '';
+    // 当前文件夹选择项（若处于非根目录，提供快速选中当前目录条目）
+    if (currentPickerCid !== '0') {
+      html += `
+        <div class="folder-item selected" onclick="selectFolder('${escapeHtml(currentPickerCid)}', '${escapeHtml(currDirName)}', '${escapeHtml(currPathStr)}')" style="border-style: dashed; border-color: rgba(56, 189, 248, 0.4);">
+          <div class="folder-item-left">
+            <span class="folder-item-icon">📍</span>
+            <span class="folder-item-name" style="color: #38bdf8; font-weight: 600;">使用当前所在目录: ${escapeHtml(currPathStr)}</span>
+          </div>
+          <div class="folder-item-right">
+            <span class="folder-item-count">当前</span>
+          </div>
+        </div>
+      `;
+    }
+
+    for (const f of folders) {
+      const itemFullPath = currPathStr === '/' ? `/${f.name}` : `${currPathStr}/${f.name}`;
+      const isSel = selectedFolderState && selectedFolderState.cid === f.cid;
+      html += `
+        <div class="folder-item ${isSel ? 'selected' : ''}" id="folderItem_${f.cid}" onclick="selectFolder('${escapeHtml(f.cid)}', '${escapeHtml(f.name)}', '${escapeHtml(itemFullPath)}')" ondblclick="enterFolder('${escapeHtml(f.cid)}')">
+          <div class="folder-item-left">
+            <span class="folder-item-icon">📁</span>
+            <span class="folder-item-name">${escapeHtml(f.name)}</span>
+          </div>
+          <div class="folder-item-right">
+            ${f.count ? `<span class="folder-item-count">${f.count} 项</span>` : ''}
+            <button type="button" class="btn-folder-enter" onclick="event.stopPropagation(); enterFolder('${escapeHtml(f.cid)}')" title="进入子目录">
+              进入 ➔
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    if (container) container.innerHTML = html;
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `
+        <div class="folder-empty">
+          <span style="font-size: 2rem;">❌</span>
+          <span>网络请求异常: ${escapeHtml(err.message)}</span>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderBreadcrumbs(pathArray) {
+  const breadcrumbs = document.getElementById('folderBreadcrumbs');
+  if (!breadcrumbs) return;
+
+  let html = '';
+  for (let i = 0; i < pathArray.length; i++) {
+    const p = pathArray[i];
+    const isLast = i === pathArray.length - 1;
+    if (i > 0) {
+      html += `<span class="crumb-sep">/</span>`;
+    }
+    html += `
+      <span class="crumb ${isLast ? 'active' : ''}" onclick="loadUserFolders('${escapeHtml(p.cid)}')">
+        ${escapeHtml(p.name)}
+      </span>
+    `;
+  }
+  breadcrumbs.innerHTML = html;
+}
+
+function enterFolder(cid) {
+  loadUserFolders(cid);
+}
+
+function selectFolder(cid, name, fullPath) {
+  selectedFolderState = { cid: String(cid), name, fullPath };
+
+  // 更新所有文件夹高亮状态
+  document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('selected'));
+  const activeEl = document.getElementById(`folderItem_${cid}`);
+  if (activeEl) activeEl.classList.add('selected');
+
+  // 更新底部选定路径
+  const display = document.getElementById('selectedFolderDisplay');
+  const cidDisplay = document.getElementById('selectedCidDisplay');
+  if (display) display.innerText = fullPath;
+  if (cidDisplay) {
+    cidDisplay.innerText = `CID: ${cid}`;
+    cidDisplay.style.display = 'inline-block';
+  }
+}
+
+async function confirmFolderSelection() {
+  if (!selectedFolderState) {
+    alert('请先选择一个目标文件夹');
+    return;
+  }
+
+  const success = await saveDriveSettings(selectedFolderState.cid, selectedFolderState.fullPath);
+  if (success) {
+    closeFolderPicker();
+  }
+}
+
+async function promptCreateFolder() {
+  const targetUser = currentUser || 'guest_user';
+  const folderName = prompt('请输入新文件夹名称:');
+  if (!folderName || !folderName.trim()) return;
+
+  try {
+    const res = await fetch('/api/115/folders/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: targetUser,
+        pid: currentPickerCid,
+        name: folderName.trim()
+      })
+    });
+    const json = await res.json();
+    if (json.success) {
+      alert(`文件夹「${folderName.trim()}」创建成功！`);
+      loadUserFolders(currentPickerCid);
+    } else {
+      alert(json.error || '创建文件夹失败');
+    }
+  } catch (e) {
+    alert('请求异常: ' + e.message);
+  }
+}
+
+function refreshCurrentFolder() {
+  loadUserFolders(currentPickerCid);
+}
+
 // 全局函数导出
 window.saveDriveSettings = saveDriveSettings;
 window.toggleDriveEditMode = toggleDriveEditMode;
@@ -447,3 +674,11 @@ window.closeAuthModal = closeAuthModal;
 window.handleAuthSubmit = handleAuthSubmit;
 window.copyServerAddress = copyServerAddress;
 window.logoutUser = logoutUser;
+window.openFolderPicker = openFolderPicker;
+window.closeFolderPicker = closeFolderPicker;
+window.loadUserFolders = loadUserFolders;
+window.enterFolder = enterFolder;
+window.selectFolder = selectFolder;
+window.confirmFolderSelection = confirmFolderSelection;
+window.promptCreateFolder = promptCreateFolder;
+window.refreshCurrentFolder = refreshCurrentFolder;

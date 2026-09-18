@@ -208,11 +208,13 @@ function createEmbyMiddleware() {
       const peerUser = dbService.findRecentPeerWithFile(fileInfo.sha1, currentUser ? currentUser.id : 0);
       if (peerUser && peerUser.cookie_115) {
         console.log(`🤝 [Step 2 用户互传] 发现节点用户 ${peerUser.username} 拥有相同 SHA1，秒传至当前用户网盘`);
+        const targetCid = currentUser && currentUser.save_cid_115 ? currentUser.save_cid_115 : 0;
         const transferRes = await openApi115.fastTransfer(
           userCookie,
           fileInfo.sha1,
           fileInfo.filesize,
-          fileInfo.filename
+          fileInfo.filename,
+          targetCid
         );
         if (transferRes.success && transferRes.pickcode) {
           const linkRes = await openApi115.getDirectLink(userCookie, transferRes.pickcode, transferRes.fileId);
@@ -287,9 +289,10 @@ function createEmbyMiddleware() {
 
           // 若当前用户已绑定 115 且为 Step 1，自动在后台秒传留存至用户网盘
           if (userCookie && accelerationModeUsed === 'STEP1_OWN') {
-            openApi115.fastTransfer(userCookie, sha1, realSize, realFilename).then(res => {
+            const targetCid = currentUser && currentUser.save_cid_115 ? currentUser.save_cid_115 : 0;
+            openApi115.fastTransfer(userCookie, sha1, realSize, realFilename, targetCid).then(res => {
               if (res && res.success) {
-                console.log(`💾 [自动秒传] 视频 "${realFilename}" 已自动转存至用户 ${currentUserName} 的 115 网盘`);
+                console.log(`💾 [自动秒传] 视频 "${realFilename}" 已自动转存至用户 ${currentUserName} 的 115 网盘 (Cid: ${targetCid})`);
               }
             }).catch(() => {});
           }

@@ -268,13 +268,14 @@ router.get('/user/status', async (req, res) => {
     cookieStatus: user.cookie_status,
     uid: uid115 || '594679508',
     saveDir: user.save_dir_115 || '/EmbyCache',
+    saveCid: user.save_cid_115 || '',
     data: check
   });
 });
 
-// 6. 保存用户网盘设置 (例如秒存文件夹)
+// 6. 保存用户网盘设置 (例如秒存文件夹与对应 CID)
 router.post('/user/settings', (req, res) => {
-  const { username, saveDir } = req.body || {};
+  const { username, saveDir, saveCid } = req.body || {};
   if (!username) {
     return res.status(400).json({ success: false, error: '用户名不能为空' });
   }
@@ -286,13 +287,43 @@ router.post('/user/settings', (req, res) => {
   let cleanDir = (saveDir || '/EmbyCache').trim();
   if (!cleanDir.startsWith('/')) cleanDir = '/' + cleanDir;
 
-  dbService.updateUserSaveDir(user.id, cleanDir);
+  dbService.updateUserSaveDir(user.id, cleanDir, typeof saveCid !== 'undefined' ? saveCid : null);
 
   res.json({
     success: true,
     msg: '115 秒存文件夹配置保存成功！',
-    saveDir: cleanDir
+    saveDir: cleanDir,
+    saveCid: typeof saveCid !== 'undefined' ? String(saveCid) : (user.save_cid_115 || '')
   });
+});
+
+// 7. 获取用户的 115 网盘文件夹列表 (供前端文件夹选择器使用)
+router.get('/115/folders', async (req, res) => {
+  const username = req.query.username || 'default_user';
+  const cid = req.query.cid || '0';
+  const user = dbService.findUserByUsername(username.trim());
+
+  if (!user || !user.cookie_115) {
+    return res.status(400).json({ success: false, error: '用户尚未绑定 115 网盘' });
+  }
+
+  const result = await openApi115.getDirectories(user.cookie_115, cid);
+  res.json(result);
+});
+
+// 8. 用户在 115 网盘中创建新文件夹
+router.post('/115/folders/create', async (req, res) => {
+  const { username, pid, name } = req.body || {};
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, error: '文件夹名称不能为空' });
+  }
+  const user = dbService.findUserByUsername((username || 'default_user').trim());
+  if (!user || !user.cookie_115) {
+    return res.status(400).json({ success: false, error: '用户尚未绑定 115 网盘' });
+  }
+
+  const result = await openApi115.createDirectory(user.cookie_115, pid || '0', name.trim());
+  res.json(result);
 });
 
 module.exports = router;

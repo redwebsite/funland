@@ -104,6 +104,9 @@ function initTables() {
   try {
     db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT '';");
   } catch (e) {}
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN save_cid_115 TEXT DEFAULT '';");
+  } catch (e) {}
 
   console.log('✅ [DB] SQLite 数据库及数据表初始化完成');
 }
@@ -192,16 +195,25 @@ const dbService = {
       `).run(cookie, status, now, userId);
     }
   },
-  updateUserSaveDir(usernameOrId, saveDir) {
+  updateUserSaveDir(usernameOrId, saveDir, saveCid = null) {
     const now = new Date().toISOString();
-    if (typeof usernameOrId === 'number' || /^\d+$/.test(usernameOrId)) {
-      db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE id = ?`).run(saveDir, now, parseInt(usernameOrId, 10));
+    const isNum = typeof usernameOrId === 'number' || /^\d+$/.test(usernameOrId);
+    if (saveCid !== null) {
+      if (isNum) {
+        db.prepare(`UPDATE users SET save_dir_115 = ?, save_cid_115 = ?, updated_at = ? WHERE id = ?`).run(saveDir, String(saveCid), now, parseInt(usernameOrId, 10));
+      } else {
+        db.prepare(`UPDATE users SET save_dir_115 = ?, save_cid_115 = ?, updated_at = ? WHERE username = ?`).run(saveDir, String(saveCid), now, usernameOrId);
+      }
     } else {
-      db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE username = ?`).run(saveDir, now, usernameOrId);
+      if (isNum) {
+        db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE id = ?`).run(saveDir, now, parseInt(usernameOrId, 10));
+      } else {
+        db.prepare(`UPDATE users SET save_dir_115 = ?, updated_at = ? WHERE username = ?`).run(saveDir, now, usernameOrId);
+      }
     }
   },
   getAllUsers() {
-    return db.prepare("SELECT id, username, emby_user_id, cookie_status, uid_115, save_dir_115, created_at, updated_at FROM users ORDER BY id DESC").all();
+    return db.prepare("SELECT id, username, emby_user_id, cookie_status, uid_115, save_dir_115, save_cid_115, created_at, updated_at FROM users ORDER BY id DESC").all();
   },
 
   // Cookie 资源池 (管理员/源网盘)

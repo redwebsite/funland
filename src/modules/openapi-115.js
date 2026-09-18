@@ -287,6 +287,117 @@ class OpenApi115 {
 
     return { found: false };
   }
+
+  /**
+   * 7. 获取指定 cid 目录下的子文件夹列表与路径信息
+   */
+  async getDirectories(cookie, cid = '0') {
+    if (!cookie) return { success: false, error: '缺少 115 Cookie' };
+
+    try {
+      const targetCid = String(cid || '0');
+      const url = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(targetCid)}&show_dir=1&limit=200&format=json`;
+      const res = await this.http.get(url, {
+        headers: {
+          Cookie: cookie,
+          Referer: 'https://115.com/',
+          'User-Agent': USER_AGENT
+        },
+        timeout: 6000
+      });
+
+      if (res.data && res.data.state) {
+        const rawData = res.data.data || [];
+        // 过滤出文件夹：115 文件夹一般没有 fid (只有 cid)，或者 ico === 'folder'
+        const folders = rawData
+          .filter(item => {
+            if (item.fid) return false;
+            return Boolean(item.cid);
+          })
+          .map(item => ({
+            cid: String(item.cid),
+            name: item.n || item.name || '未命名文件夹',
+            pid: String(item.pid || targetCid),
+            count: typeof item.fc !== 'undefined' ? item.fc : 0,
+            updatedAt: item.t || ''
+          }));
+
+        // 解析面包屑路径
+        let path = [];
+        if (Array.isArray(res.data.path) && res.data.path.length > 0) {
+          path = res.data.path.map(p => ({
+            cid: String(p.cid),
+            name: p.name || (String(p.cid) === '0' ? '根目录' : String(p.cid))
+          }));
+        } else {
+          path = [{ cid: '0', name: '根目录' }];
+        }
+
+        // 计算当前完整绝对路径字符串
+        const pathParts = path.map(p => p.name).filter(n => n && n !== '根目录');
+        const fullPath = pathParts.length > 0 ? '/' + pathParts.join('/') : '/';
+
+        return {
+          success: true,
+          cid: targetCid,
+          fullPath,
+          path,
+          folders
+        };
+      }
+
+      return {
+        success: false,
+        error: res.data ? (res.data.msg || res.data.error || '获取网盘目录失败') : '上游返回为空'
+      };
+    } catch (e) {
+      console.error('❌ [115] 获取目录列表失败:', e.message);
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 8. 在指定目录下创建新文件夹
+   */
+  async createDirectory(cookie, pid = '0', name) {
+    if (!cookie) return { success: false, error: '缺少 115 Cookie' };
+    if (!name || !name.trim()) return { success: false, error: '文件夹名称不能为空' };
+
+    try {
+      const res = await this.http.post(
+        'https://webapi.115.com/files/add',
+        new URLSearchParams({
+          pid: String(pid || '0'),
+          cname: name.trim()
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Cookie: cookie,
+            Referer: 'https://115.com/',
+            'User-Agent': USER_AGENT
+          },
+          timeout: 6000
+        }
+      );
+
+      if (res.data && (res.data.state === true || res.data.status === true)) {
+        const fileId = res.data.data ? (res.data.data.file_id || res.data.data.cid || res.data.data.category_id) : '';
+        return {
+          success: true,
+          cid: String(fileId || ''),
+          name: name.trim()
+        };
+      }
+
+      return {
+        success: false,
+        error: res.data ? (res.data.error || res.data.msg || '创建文件夹失败') : '创建失败'
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
 }
 
 const openApi115 = new OpenApi115();
