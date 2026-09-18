@@ -210,27 +210,51 @@ class OpenApi115 {
    * 6. 在指定用户的网盘中根据 SHA1 或文件名查询文件
    */
   async searchUserDrive(cookie, query) {
-    try {
-      const url = `https://webapi.115.com/files/search?search_value=${encodeURIComponent(query)}&limit=10`;
-      const res = await this.http.get(url, {
-        headers: { Cookie: cookie }
-      });
+    if (!cookie || !query) return { found: false };
 
-      if (res.data && res.data.state && res.data.data && res.data.data.length > 0) {
-        const item = res.data.data[0];
-        return {
-          found: true,
-          pickcode: item.pc,
-          fileId: item.fid,
-          filename: item.n,
-          filesize: item.s,
-          sha1: item.sha1
-        };
-      }
-      return { found: false };
-    } catch (e) {
-      return { found: false, error: e.message };
+    // 生成搜索候选词：优先原始关键词，其次去除特殊符号与扩展名的纯净关键词
+    const cleanQuery = query.replace(/\.[a-zA-Z0-9]+$/, '').replace(/[:：_\-\[\]\(\)]+/g, ' ').trim();
+    const candidateQueries = [query];
+    if (cleanQuery && cleanQuery !== query && !candidateQueries.includes(cleanQuery)) {
+      candidateQueries.push(cleanQuery);
     }
+    const mainTitle = cleanQuery.split(/\s+/)[0];
+    if (mainTitle && mainTitle.length >= 2 && !candidateQueries.includes(mainTitle)) {
+      candidateQueries.push(mainTitle);
+    }
+
+    for (const q of candidateQueries) {
+      try {
+        const url = `https://webapi.115.com/files/search?search_value=${encodeURIComponent(q)}&cid=0&limit=10&format=json`;
+        const res = await this.http.get(url, {
+          headers: {
+            Cookie: cookie,
+            Referer: 'https://115.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          },
+          timeout: 4000
+        });
+
+        if (res.data && res.data.state && res.data.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+          // 优先寻找视频文件（过滤非视频类型，优先含 pickcode 的文件）
+          const videoItem = res.data.data.find(item => item.pc && (item.sha1 || item.sha || item.s > 0)) || res.data.data[0];
+          if (videoItem && videoItem.pc) {
+            return {
+              found: true,
+              pickcode: videoItem.pc,
+              fileId: videoItem.fid,
+              filename: videoItem.n,
+              filesize: videoItem.s,
+              sha1: videoItem.sha1 || videoItem.sha
+            };
+          }
+        }
+      } catch (e) {
+        // 单个查询异常则尝试下一个候选词
+      }
+    }
+
+    return { found: false };
   }
 }
 

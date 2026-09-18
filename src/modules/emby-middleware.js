@@ -22,15 +22,15 @@ function createEmbyMiddleware() {
    */
   async function fetchEmbyItemMetadata(itemId, clientToken = '') {
     const base = upstreamUrl().replace(/\/+$/, '');
-    const token = clientToken || apiKey();
+    const token = apiKey() || clientToken;
     const headers = {};
     if (token) {
       headers['X-Emby-Token'] = token;
     }
 
     try {
-      // 尝试查询 Items 详情
-      const res = await axios.get(`${base}/emby/Items?Ids=${itemId}&Fields=Path,MediaSources,MediaStreams,Overview`, {
+      // 优先使用管理员 API Key 查询 Items 完整详情（确保 Path 与 MediaSources 不被普通用户权限过滤）
+      const res = await axios.get(`${base}/emby/Items?Ids=${itemId}&Fields=Path,MediaSources,MediaStreams,Overview,SeriesName,SeasonName`, {
         headers,
         timeout: 4000,
         httpsAgent
@@ -42,15 +42,22 @@ function createEmbyMiddleware() {
         const filePath = mediaSource ? (mediaSource.Path || '') : (item.Path || '');
         let filename = filePath ? filePath.split(/[\/\\]/).pop() : (item.Name || `Item-${itemId}`);
 
-        // 从路径或 URL 中提取 pickcode (适用于 strm 虚拟文件或 115 结构)
+        // 从路径或 URL 中提取 pickcode (适用于 strm 虚拟文件、直链或 115 结构)
         let pickcode = '';
-        const pickcodeMatch = filePath.match(/[?&]pickcode=([a-z0-9]+)/i);
+        const pickcodeMatch = filePath.match(/[?&]pickcode=([a-z0-9]+)/i) || filePath.match(/115:\/\/([a-z0-9]+)/i);
         if (pickcodeMatch) {
           pickcode = pickcodeMatch[1];
         }
 
         // 若为 .strm 文件，清洗掉后缀以匹配 115 网盘上的真实视频名
         filename = filename.replace(/\.strm$/i, '');
+
+        // 如果是剧集且未获取到独立文件名，组合剧集名与单集名进行精准搜索
+        if (item.SeriesName && (!filePath || filename === item.Name)) {
+          filename = `${item.SeriesName} ${item.Name}`;
+        }
+
+        console.log(`📋 [Emby Metadata] ItemId=${itemId}, Name="${item.Name}", Path="${filePath}", File="${filename}", Pickcode="${pickcode || 'none'}"`);
 
         return {
           id: itemId,
@@ -134,17 +141,21 @@ function createEmbyMiddleware() {
 
     // --- STEP 1: 用户自有网盘匹配 (50ms) ---
     if (userCookie) {
+      console.log(`🔍 [Step 1 用户盘] 检索用户 ${currentUserName} 的 115 资源: ${targetPickcode ? `Pickcode=${targetPickcode}` : `名称="${mediaMetadata ? mediaMetadata.filename : itemId}"`}`);
       if (targetPickcode) {
         const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
         if (linkRes.success) {
           resolvedDirectUrl = linkRes.downloadUrl;
           accelerationModeUsed = 'STEP1_OWN';
           console.log(`✅ [Step 1 命中] 用户 ${currentUserName} 自有网盘直链解析成功 (Pickcode: ${targetPickcode})`);
+        } else {
+          console.warn(`⚠️ [Step 1] 用户网盘解析 Pickcode (${targetPickcode}) 直链未成功: ${linkRes.error}`);
         }
-      } else if (mediaMetadata && mediaMetadata.filename) {
-        // 在用户网盘中搜索文件名
-        const searchRes = await openApi115.searchUserDrive(userCookie, mediaMetadata.filename);
-        if (searchRes.found) {
+      } else if (mediaMetadata && (mediaMetadata.filename || mediaMetadata.name)) {
+        const searchTarget = mediaMetadata.filename || mediaMetadata.name;
+        const searchRes = await openApi115.searchUserDrive(userCookie, searchTarget);
+        if (searchRes.found && searchRes.pickcode) {
+          console.log(`🎯 [Step 1 搜索命中] 在用户网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
           const linkRes = await openApi115.getDirectLink(userCookie, searchRes.pickcode, searchRes.fileId);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
@@ -158,9 +169,16 @@ function createEmbyMiddleware() {
               searchRes.fileId,
               itemId
             );
+            console.log(`✅ [Step 1 命中] 用户 ${currentUserName} 自有网盘直链获取成功: ${searchRes.filename}`);
+          } else {
+            console.warn(`⚠️ [Step 1] 获取直链失败: ${linkRes.error}`);
           }
+        } else {
+          console.log(`ℹ️ [Step 1 未命中] 用户网盘未检索到匹配文件: "${searchTarget}"`);
         }
       }
+    } else {
+      console.log(`ℹ️ [Step 1 跳过] 用户 ${currentUserName} 尚未绑定有效 115 Cookie`);
     }
 
     // --- STEP 2: 用户间智能秒传加速 (5ms) ---
@@ -198,10 +216,13 @@ function createEmbyMiddleware() {
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP3_SOURCE';
+            console.log(`✅ [Step 3 命中] 源网盘根据 Pickcode (${targetPickcode}) 直链解析成功`);
           }
-        } else if (mediaMetadata && mediaMetadata.filename) {
-          const searchRes = await openApi115.searchUserDrive(sourceCookieObj.cookie, mediaMetadata.filename);
-          if (searchRes.found) {
+        } else if (mediaMetadata && (mediaMetadata.filename || mediaMetadata.name)) {
+          const searchTarget = mediaMetadata.filename || mediaMetadata.name;
+          const searchRes = await openApi115.searchUserDrive(sourceCookieObj.cookie, searchTarget);
+          if (searchRes.found && searchRes.pickcode) {
+            console.log(`🎯 [Step 3 搜索命中] 在源网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
             const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, searchRes.pickcode, searchRes.fileId);
             if (linkRes.success) {
               resolvedDirectUrl = linkRes.downloadUrl;
@@ -214,7 +235,10 @@ function createEmbyMiddleware() {
                 searchRes.fileId,
                 itemId
               );
+              console.log(`✅ [Step 3 命中] 源网盘直链获取成功: ${searchRes.filename}`);
             }
+          } else {
+            console.log(`ℹ️ [Step 3 未命中] 源网盘未检索到匹配文件: "${searchTarget}"`);
           }
         }
       }
