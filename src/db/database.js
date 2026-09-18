@@ -141,6 +141,10 @@ const dbService = {
   findUserById(id) {
     return db.prepare("SELECT * FROM users WHERE id = ?").get(id);
   },
+  findUserByEmbyUserId(embyUserId) {
+    if (!embyUserId) return null;
+    return db.prepare("SELECT * FROM users WHERE emby_user_id = ?").get(embyUserId);
+  },
   createUser(username, passwordHash, embyUserId = '') {
     const now = new Date().toISOString();
     const result = db.prepare(`

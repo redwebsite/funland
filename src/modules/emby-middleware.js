@@ -39,14 +39,25 @@ function createEmbyMiddleware() {
       if (res.data && res.data.Items && res.data.Items.length > 0) {
         const item = res.data.Items[0];
         const mediaSource = item.MediaSources && item.MediaSources.length > 0 ? item.MediaSources[0] : null;
-        const filePath = mediaSource ? mediaSource.Path : (item.Path || '');
-        const filename = filePath ? filePath.split(/[\/\\]/).pop() : (item.Name || `Item-${itemId}`);
+        const filePath = mediaSource ? (mediaSource.Path || '') : (item.Path || '');
+        let filename = filePath ? filePath.split(/[\/\\]/).pop() : (item.Name || `Item-${itemId}`);
+
+        // 从路径或 URL 中提取 pickcode (适用于 strm 虚拟文件或 115 结构)
+        let pickcode = '';
+        const pickcodeMatch = filePath.match(/[?&]pickcode=([a-z0-9]+)/i);
+        if (pickcodeMatch) {
+          pickcode = pickcodeMatch[1];
+        }
+
+        // 若为 .strm 文件，清洗掉后缀以匹配 115 网盘上的真实视频名
+        filename = filename.replace(/\.strm$/i, '');
 
         return {
           id: itemId,
           name: item.Name || filename,
           filename,
           filePath,
+          pickcode,
           size: mediaSource ? mediaSource.Size : 0
         };
       }
@@ -63,6 +74,9 @@ function createEmbyMiddleware() {
     };
   }
 
+  // 智能捕获客户端 Emby 用户 Token 与 UserId 的映射
+  const tokenToUserMap = new Map();
+
   /**
    * 核心拦截器：处理视频流请求并实行 302 Found 重定向
    */
@@ -70,50 +84,62 @@ function createEmbyMiddleware() {
     const itemId = req.params.id;
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
     const clientToken = req.query.api_key || req.headers['x-emby-token'] || req.query['X-Emby-Token'] || '';
-    const userId = req.query.UserId || req.query.userId || req.headers['x-emby-user-id'] || 'anonymous';
+    let userId = req.query.UserId || req.query.userId || req.headers['x-emby-user-id'] || '';
 
-    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, User=${userId}, IP=${clientIp}`);
+    // 若流请求未带 UserId 参数，则通过 Token 映射还原 Emby 真实用户
+    if (!userId && clientToken && tokenToUserMap.has(clientToken)) {
+      userId = tokenToUserMap.get(clientToken);
+    }
+    if (!userId) userId = 'anonymous';
+
+    // 获取当前请求用户
+    const currentUser = dbService.findUserByUsername(userId) ||
+                        dbService.findUserByEmbyUserId(userId) ||
+                        (userId !== 'anonymous' && /^\d+$/.test(userId) ? dbService.findUserById(userId) : null);
+    const userCookie = currentUser && currentUser.cookie_status === 'active' ? currentUser.cookie_115 : null;
+    const currentUserName = currentUser ? currentUser.username : (userId || 'anonymous');
+
+    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, 用户=${currentUserName} (${userId}), IP=${clientIp}`);
 
     // 1. 检查 30 分钟滑动过期缓存 (Sliding Expiration Cache)
-    const cacheKey = cacheScheduler.makeKey('stream:direct', itemId, userId);
+    const cacheKey = cacheScheduler.makeKey('stream:direct', itemId, currentUserName);
     const cachedDirectUrl = cacheScheduler.get(cacheKey, true); // true = 命中时自动顺延 30 分钟
 
     if (cachedDirectUrl) {
       console.log(`⚡ [Cache Hit] 30分钟缓存命中: ItemId=${itemId}, 剩余TTL滑动刷新`);
-      dbService.logPlayback(itemId, 'Cached-Media', userId, clientIp, 'CACHE_HIT', cachedDirectUrl);
+      dbService.logPlayback(itemId, 'Cached-Media', currentUserName, clientIp, 'CACHE_HIT', cachedDirectUrl);
       return res.redirect(302, cachedDirectUrl);
     }
 
-    // 2. 检查本地 SQLite 是否已有该文件的 SHA1 索引
+    // 2. 检查本地 SQLite 是否已有该文件的 SHA1 / Pickcode 索引
     let fileInfo = dbService.findFileByEmbyItemId(itemId);
     let mediaMetadata = null;
 
-    if (!fileInfo) {
+    if (!fileInfo || !fileInfo.pickcode) {
       // 从 Emby 上游抓取文件名和路径
       mediaMetadata = await fetchEmbyItemMetadata(itemId, clientToken);
-      if (mediaMetadata.filename) {
+      if (mediaMetadata && mediaMetadata.filename) {
         // 在 SQLite 中尝试按文件名匹配
         const allFiles = dbService.getAllIndexedFiles(500);
-        fileInfo = allFiles.find(f => f.filename === mediaMetadata.filename);
+        const matchByName = allFiles.find(f => f.filename === mediaMetadata.filename);
+        if (matchByName) fileInfo = matchByName;
       }
     }
 
-    // 3. 执行 NextEmby Pro 架构：三级智能加速逻辑
+    const targetPickcode = (fileInfo && fileInfo.pickcode) || (mediaMetadata && mediaMetadata.pickcode) || '';
+
+    // 3. 执行三级智能加速逻辑
     let resolvedDirectUrl = null;
     let accelerationModeUsed = 'NONE';
 
-    // 获取当前请求用户
-    const currentUser = dbService.findUserByUsername(userId) || (userId !== 'anonymous' ? dbService.findUserById(userId) : null);
-    const userCookie = currentUser && currentUser.cookie_status === 'active' ? currentUser.cookie_115 : null;
-
     // --- STEP 1: 用户自有网盘匹配 (50ms) ---
     if (userCookie) {
-      if (fileInfo && fileInfo.pickcode) {
-        const linkRes = await openApi115.getDirectLink(userCookie, fileInfo.pickcode, fileInfo.file_id);
+      if (targetPickcode) {
+        const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
         if (linkRes.success) {
           resolvedDirectUrl = linkRes.downloadUrl;
           accelerationModeUsed = 'STEP1_OWN';
-          console.log(`✅ [Step 1 命中] 用户自有网盘直链解析成功`);
+          console.log(`✅ [Step 1 命中] 用户 ${currentUserName} 自有网盘直链解析成功 (Pickcode: ${targetPickcode})`);
         }
       } else if (mediaMetadata && mediaMetadata.filename) {
         // 在用户网盘中搜索文件名
@@ -167,8 +193,8 @@ function createEmbyMiddleware() {
         console.log(`📦 [Step 3 源盘兜底] 从公共/源网盘资源池提取直链或执行秒传`);
         dbService.updateCookieUsed(sourceCookieObj.id);
 
-        if (fileInfo && fileInfo.pickcode) {
-          const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, fileInfo.pickcode, fileInfo.file_id);
+        if (targetPickcode) {
+          const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP3_SOURCE';
@@ -201,7 +227,7 @@ function createEmbyMiddleware() {
       cacheScheduler.set(cacheKey, resolvedDirectUrl, config.cache.ttlSeconds);
       // 记录播放历史与热度
       if (fileInfo) dbService.updateFilePlayback(fileInfo.sha1);
-      dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', userId, clientIp, accelerationModeUsed, resolvedDirectUrl);
+      dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
 
       // 返回标准 HTTP 302 Found 重定向
       return res.redirect(302, resolvedDirectUrl);
@@ -209,16 +235,38 @@ function createEmbyMiddleware() {
 
     // 5. 兜底回退：如果未配置网盘或直链解析未命中，无缝透明代理上游 Emby 原始流，确保播放绝不报错！
     console.log(`⚠️ [Fallback] 115 链路未命中，透明回退至真实 Emby 服务器串流`);
-    dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', userId, clientIp, 'FALLBACK_EMBY', 'UPSTREAM_PROXY');
+    dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, 'FALLBACK_EMBY', 'UPSTREAM_PROXY');
     return next();
   }
 
-  // 挂载拦截路由规则 (完全兼容 Emby 规范)
-  router.get('/Videos/:id/stream', handleStreamInterception);
-  router.get('/Videos/:id/original', handleStreamInterception);
-  router.get('/Videos/:id/stream.:ext', handleStreamInterception);
-  router.get('/Videos/:id/master.m3u8', handleStreamInterception);
-  router.get('/Items/:id/Download', handleStreamInterception);
+  // 智能捕获客户端 Emby 用户 Token 与 UserId 的映射
+  router.use((req, res, next) => {
+    const token = req.query.api_key || req.headers['x-emby-token'] || req.query['X-Emby-Token'];
+    const embyUserId = req.query.UserId || req.query.userId || req.headers['x-emby-user-id'];
+    const userPathMatch = req.path.match(/^(?:\/emby)?\/users\/([a-f0-9]{20,40})/i);
+    const resolvedUserId = embyUserId || (userPathMatch ? userPathMatch[1] : null);
+
+    if (token && resolvedUserId) {
+      tokenToUserMap.set(token, resolvedUserId);
+    }
+    next();
+  });
+
+  // 挂载核心拦截路由规则 (完美兼容 /emby/Videos/... 与 /Videos/... 各类客户端规范)
+  const STREAM_PATH_REGEX = /^(?:\/emby)?\/(?:videos\/([^\/\?]+)\/(stream|original|master\.m3u8|main\.m3u8)(?:\.[a-zA-Z0-9]+)?|items\/([^\/\?]+)\/download)/i;
+
+  router.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return next();
+    }
+    const match = req.path.match(STREAM_PATH_REGEX);
+    if (match) {
+      req.params = req.params || {};
+      req.params.id = match[1] || match[3];
+      return handleStreamInterception(req, res, next);
+    }
+    next();
+  });
 
   // 透明代理所有其他 Emby 请求（元数据、列表、海报、登录认证、系统接口）
   const proxyHandler = createProxyMiddleware({
