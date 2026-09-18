@@ -292,21 +292,41 @@ function createEmbyMiddleware() {
         const urlSegments = resolvedDirectUrl.split('?')[0].split('/');
         const encodedName = urlSegments[urlSegments.length - 1];
         const realFilename = encodedName ? decodeURIComponent(encodedName) : (mediaMetadata ? mediaMetadata.name : 'Media');
-        const realSize = mediaMetadata ? (mediaMetadata.size || 0) : 0;
+        let realSize = mediaMetadata ? (mediaMetadata.size || 0) : 0;
 
         if (sha1) {
-          dbService.recordFileIndex(sha1, realFilename, realSize, targetPickcode, '', itemId);
-          if (currentUser) dbService.recordFileUser(sha1, currentUser.id);
-
-          // 若当前用户已绑定 115 且为 Step 1，自动在后台秒传留存至用户网盘
-          if (userCookie && accelerationModeUsed === 'STEP1_OWN') {
-            const targetCid = currentUser && currentUser.save_cid_115 ? currentUser.save_cid_115 : 0;
-            openApi115.fastTransfer(userCookie, sha1, realSize, realFilename, targetCid).then(res => {
-              if (res && res.success) {
-                console.log(`💾 [自动秒传] 视频 "${realFilename}" 已自动转存至用户 ${currentUserName} 的 115 网盘 (Cid: ${targetCid})`);
+          // 异步在后台获取真实 Content-Length 并执行指纹沉淀与秒传
+          (async () => {
+            try {
+              if (realSize === 0 && resolvedDirectUrl) {
+                try {
+                  const headRes = await axios.head(resolvedDirectUrl, {
+                    headers: clientUa ? { 'User-Agent': clientUa } : {},
+                    timeout: 4000,
+                    httpsAgent
+                  });
+                  if (headRes && headRes.headers && headRes.headers['content-length']) {
+                    realSize = parseInt(headRes.headers['content-length'], 10) || 0;
+                  }
+                } catch (e) {}
               }
-            }).catch(() => {});
-          }
+
+              dbService.recordFileIndex(sha1, realFilename, realSize, targetPickcode, '', itemId);
+              if (currentUser) dbService.recordFileUser(sha1, currentUser.id);
+
+              // 若当前用户已绑定 115 且配置了秒传目标目录，尝试在后台秒传留存
+              if (userCookie && currentUser && currentUser.save_cid_115) {
+                const targetCid = currentUser.save_cid_115;
+                openApi115.fastTransfer(userCookie, sha1, realSize, realFilename, targetCid).then(res => {
+                  if (res && res.success) {
+                    console.log(`💾 [自动秒传] 视频 "${realFilename}" (${(realSize / 1073741824).toFixed(2)} GB) 已转存至用户 ${currentUserName} 的 115 目录 (Cid: ${targetCid})`);
+                  } else {
+                    console.log(`ℹ️ [秒传提示] 视频 "${realFilename}" 转存小号提示: ${res ? (res.msg || res.error) : '115风控限制或无需转存'}`);
+                  }
+                }).catch(() => {});
+              }
+            } catch (e) {}
+          })();
         }
       } catch (e) {}
 
