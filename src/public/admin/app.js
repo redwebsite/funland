@@ -704,15 +704,19 @@ async function toggleUser(id) {
 }
 
 async function deleteUserAccount(id) {
-  if (!confirm('确定彻底删除该用户账号？')) return;
+  if (!confirm('确定彻底删除该用户？（将同步从 Emby 服务端彻底注销该用户）')) return;
   try {
-    const res = await adminFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+    const res = await adminFetch(`/api/admin/users/${id}?deleteEmby=true`, { method: 'DELETE' });
     const json = await res.json();
     if (json.success) {
-      showToast('用户已删除');
+      showToast(json.msg || '用户及 Emby 账号已成功删除');
       loadUsers();
+    } else {
+      showToast(json.error || '删除失败', 'error');
     }
-  } catch (e) { }
+  } catch (e) {
+    showToast('删除请求异常: ' + e.message, 'error');
+  }
 }
 
 // 工具函数

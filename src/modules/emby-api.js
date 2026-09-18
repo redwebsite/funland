@@ -161,18 +161,29 @@ class EmbyApiService {
    */
   async deleteEmbyUser(userId) {
     const base = this.getUpstreamBase();
-    if (!base || !userId) return;
+    if (!base || !userId) return false;
 
+    const headers = this.getHeaders();
     try {
       await axios.delete(`${base}/emby/Users/${userId}`, {
-        headers: this.getHeaders(),
+        headers,
         httpsAgent,
         timeout: 6000
       });
       return true;
     } catch (e) {
-      console.warn(`[Emby API] 删除 Emby 用户 ${userId} 失败:`, e.message);
-      return false;
+      // 兼容某些版本的 Emby RPC 删除接口
+      try {
+        await axios.post(`${base}/emby/Users/${userId}/Delete`, {}, {
+          headers,
+          httpsAgent,
+          timeout: 6000
+        });
+        return true;
+      } catch (err2) {
+        console.warn(`[Emby API] 删除 Emby 用户 ${userId} 失败:`, e.message);
+        return false;
+      }
     }
   }
 }

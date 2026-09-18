@@ -217,20 +217,52 @@ router.post('/users/:id/toggle', (req, res) => {
   res.json({ success: true, msg: `用户状态已切换为: ${newStatus}`, newStatus });
 });
 
-// 14. 删除用户
+// 14. 删除用户 (默认同步删除 Emby 服务端的账号)
 router.delete('/users/:id', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     return res.status(400).json({ success: false, error: '用户 ID 参数无效' });
   }
+
   const user = dbService.findUserById(id);
-  if (user && user.emby_user_id && req.query.deleteEmby === 'true') {
-    try {
-      await embyApi.deleteEmbyUser(user.emby_user_id);
-    } catch (err) {}
+  let embyDeleted = false;
+
+  if (user) {
+    // 默认同步删除 Emby 账号 (除非显式指定 deleteEmby=false)
+    const shouldDeleteEmby = req.query.deleteEmby !== 'false';
+    if (shouldDeleteEmby) {
+      let targetEmbyId = user.emby_user_id;
+
+      // 如果本地没有记录 emby_user_id，尝试通过用户名在上游 Emby 查找同名账号删除
+      if (!targetEmbyId) {
+        try {
+          const embyUsers = await embyApi.getEmbyUsers();
+          const match = embyUsers.find(u => u.name.toLowerCase() === user.username.toLowerCase());
+          if (match && !match.isAdmin) {
+            targetEmbyId = match.id;
+          }
+        } catch (e) {}
+      }
+
+      if (targetEmbyId) {
+        try {
+          embyDeleted = await embyApi.deleteEmbyUser(targetEmbyId);
+          console.log(`🗑️ [Emby User] 成功同步删除 Emby 用户: ${user.username} (ID: ${targetEmbyId})`);
+        } catch (err) {
+          console.warn(`[Emby User] 同步删除 Emby 用户失败:`, err.message);
+        }
+      }
+    }
   }
+
   dbService.deleteUser(id);
-  res.json({ success: true, msg: `用户 #${id} 已成功删除` });
+  res.json({
+    success: true,
+    msg: embyDeleted 
+      ? `用户 "${user ? user.username : id}" 及其 Emby 账号已同步彻底删除！` 
+      : `用户 #${id} 已成功删除`,
+    embyDeleted
+  });
 });
 
 // 15. 获取上游 Emby 用户列表（供后台选择模板用户）
