@@ -66,17 +66,19 @@ npm start
 
 ---
 
-## 🐳 服务器一键部署 (Docker + Caddy)
+## 🐳 服务器一键部署 (Docker / 1Panel)
 
-### 1. Cloudflare DNS 解析设置
-在 Cloudflare 中将你的主域名（例如 `yourdomain.com`）解析至你的服务器 IP（开启橙色云朵代理）：
-- `A @ -> <服务器IP>`
-- `A www -> <服务器IP>`
-- `A admin -> <服务器IP>`
-- `A emby -> <服务器IP>`
-
-### 2. 运行容器
+### 1. 运行容器
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
-Caddy 将自动申请并配置 Let's Encrypt SSL 证书，并安全反代 8098、8091 与 8097 端口。
+系统默认运行在 **Bridge 桥接网络模式** 下，自动映射以下三个端口：
+* **8098**：用户中心与公共门户 (Portal)
+* **8091**：管理控制台 (Admin)
+* **8097**：Emby 播放请求反代与 302 调度 (Proxy)
+
+### 2. 反向代理设置 (1Panel / OpenResty / Nginx)
+在 1Panel 的【网站】中添加反向代理规则：
+* `yourdomain.com` ➡️ 反代到 `http://127.0.0.1:8098`
+* `admin.yourdomain.com` ➡️ 反代到 `http://127.0.0.1:8091`（或直接访问 `8098/admin`）
+* `emby.yourdomain.com` ➡️ 反代到 `http://127.0.0.1:8097`（记得在反向代理中开启 WebSocket 支持）

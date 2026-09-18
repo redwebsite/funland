@@ -5,7 +5,10 @@ services:
     build: .
     container_name: funland
     restart: unless-stopped
-    network_mode: host
+    ports:
+      - "${PORT_PORTAL:-8098}:${PORT_PORTAL:-8098}"
+      - "${PORT_ADMIN:-8091}:${PORT_ADMIN:-8091}"
+      - "${PORT_EMBY:-8097}:${PORT_EMBY:-8097}"
     env_file:
       - .env
     environment:
@@ -20,21 +23,3 @@ services:
       - ./src:/app/src
       - ./data:/app/data
       - ./logs:/app/logs
-
-  caddy:
-    image: caddy:2-alpine
-    container_name: caddy
-    restart: unless-stopped
-    network_mode: host
-    environment:
-      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-      - ./logs/caddy:/var/log/caddy
-
-volumes:
-  caddy_data:
-  caddy_config:
