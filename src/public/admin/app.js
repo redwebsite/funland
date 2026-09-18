@@ -568,8 +568,8 @@ async function loadLogs() {
 async function loadUsers() {
   try {
     const [usersRes, settingsRes] = await Promise.all([
-      adminFetch('/api/admin/users'),
-      adminFetch('/api/admin/settings')
+      adminFetch('/api/admin/users?t=' + Date.now()),
+      adminFetch('/api/admin/settings?t=' + Date.now())
     ]);
     if (!usersRes.ok || !settingsRes.ok) return;
 
@@ -619,7 +619,7 @@ async function loadUsers() {
       tr.innerHTML = `
         <td>#${user.id}</td>
         <td><strong>${escapeHtml(user.username)}</strong></td>
-        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback" title="该用户尚未在 Emby 服务端创建">⚠️ 未同步</span>`}</td>
+        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback" title="该用户在 Emby 服务端不存在或尚未关联">未关联</span>`}</td>
         <td><span class="badge ${user.cookie_status === 'active' ? 'badge-step1' : 'badge-fallback'}">${escapeHtml(user.cookie_status || '未绑定')}</span></td>
         <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</td>
         <td><span class="badge ${isDisabled ? 'badge-fallback' : 'badge-step2'}">${isDisabled ? '已封禁' : '正常'}</span></td>

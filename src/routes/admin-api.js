@@ -204,9 +204,63 @@ router.get('/logs', (req, res) => {
   res.json({ success: true, data: logs });
 });
 
-// 12. 用户列表
-router.get('/users', (req, res) => {
-  const users = dbService.getAllUsers();
+// 管理后台接口禁用任何缓存，避免数据刷新不及时或 304 问题
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
+// 12. 用户列表 (实时核对上游 Emby 账号存活状态)
+router.get('/users', async (req, res) => {
+  let users = dbService.getAllUsers();
+
+  // 尝试与上游 Emby 服务器实时核对用户存活状态
+  try {
+    const embyUsers = await embyApi.getEmbyUsers();
+    if (Array.isArray(embyUsers)) {
+      const embyIdMap = new Map();
+      const embyNameMap = new Map();
+      embyUsers.forEach(u => {
+        if (u && u.id) {
+          const rawId = String(u.id).trim();
+          embyIdMap.set(rawId.toLowerCase().replace(/-/g, ''), rawId);
+        }
+        if (u && u.name) {
+          embyNameMap.set(String(u.name).trim().toLowerCase(), u);
+        }
+      });
+
+      for (const u of users) {
+        if (u.emby_user_id) {
+          const normId = String(u.emby_user_id).trim().toLowerCase().replace(/-/g, '');
+          if (!embyIdMap.has(normId)) {
+            // Emby 中该 ID 已经不存在，检查是否被重新以同名创建
+            const nameMatch = u.username ? embyNameMap.get(String(u.username).trim().toLowerCase()) : null;
+            if (nameMatch) {
+              dbService.updateEmbyUserId(u.id, nameMatch.id);
+              u.emby_user_id = nameMatch.id;
+            } else {
+              // Emby 端已删除该用户，自动置空本地关联（状态变为未关联）
+              dbService.updateEmbyUserId(u.id, '');
+              u.emby_user_id = '';
+            }
+          }
+        } else if (u.username) {
+          // 本地尚未关联，但如果 Emby 端存在同名用户，则自动关联
+          const nameMatch = embyNameMap.get(String(u.username).trim().toLowerCase());
+          if (nameMatch) {
+            dbService.updateEmbyUserId(u.id, nameMatch.id);
+            u.emby_user_id = nameMatch.id;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Admin API] 刷新用户时核对 Emby 状态跳过:', err.message);
+  }
+
   res.json({ success: true, data: users });
 });
 
