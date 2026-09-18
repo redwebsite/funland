@@ -85,7 +85,9 @@ router.get('/stats', (req, res) => {
       accelerationMode: dbService.getSetting('acceleration_mode', 'PRO'),
       upstreamUrl: dbService.getSetting('emby_upstream_url', config.emby.upstreamUrl),
       allowRegistration: dbService.getSetting('allow_registration', 'true') === 'true',
-      maxUsersLimit: parseInt(dbService.getSetting('max_users_limit', '200'), 10)
+      maxUsersLimit: parseInt(dbService.getSetting('max_users_limit', '200'), 10),
+      allowMasterDirectFallback: dbService.getSetting('allow_master_direct_fallback', 'false') === 'true',
+      allowMasterForGuests: dbService.getSetting('allow_master_for_guests', 'false') === 'true'
     }
   });
 });
@@ -121,7 +123,7 @@ router.get('/cookie-pool', (req, res) => {
   res.json({ success: true, data: safePool });
 });
 
-// 5. 添加账号至 Cookie 资源池
+// 5. 添加账号至 Cookie 资源池 (手动粘贴 Cookie)
 router.post('/cookie-pool', async (req, res) => {
   const { name, cookie } = req.body;
   if (!cookie || !name) {
@@ -144,6 +146,35 @@ router.post('/cookie-pool', async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// 5.1 扫码添加源网盘至 Cookie 资源池 - 创建扫码会话
+router.post('/cookie-pool/qr-session', async (req, res) => {
+  const session = await openApi115.createQrSession();
+  res.json(session);
+});
+
+// 5.2 扫码添加源网盘至 Cookie 资源池 - 轮询扫码状态
+router.get('/cookie-pool/qr-status', async (req, res) => {
+  const { uid, time, sign, name } = req.query;
+  if (!uid || !time || !sign) {
+    return res.status(400).json({ success: false, error: '缺少扫码参数' });
+  }
+  const result = await openApi115.checkQrStatus(uid, time, sign);
+  if (result.status === 'confirmed' && result.cookie) {
+    const check = await openApi115.validateCookie(result.cookie);
+    const vipInfo = check.isVip ? `VIP到期: ${check.vipExpire}` : '普通账号';
+    const poolName = name ? name.trim() : `源盘_${check.username || '115'}`;
+    dbService.addCookieToPool(poolName, result.cookie, vipInfo);
+    return res.json({
+      ...result,
+      saved: true,
+      poolName,
+      vipInfo,
+      username: check.username
+    });
+  }
+  res.json(result);
 });
 
 // 6. 删除 Cookie 资源池账号

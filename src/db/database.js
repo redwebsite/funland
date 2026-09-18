@@ -59,6 +59,16 @@ function initTables() {
       created_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS user_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      sha1 TEXT NOT NULL,
+      pickcode TEXT NOT NULL,
+      file_id TEXT,
+      created_at TEXT,
+      UNIQUE(user_id, sha1)
+    );
+
     CREATE TABLE IF NOT EXISTS playback_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id TEXT,
@@ -84,7 +94,9 @@ function initTables() {
     { key: 'max_users_limit', value: '200' },      // 最大注册人数上限 (例如 200 人)
     { key: 'emby_sync_user', value: 'true' },      // 是否自动同步注册 Emby 账号
     { key: 'emby_template_user_id', value: '' },   // 模板用户 ID
-    { key: 'emby_template_user_name', value: '' }  // 模板用户名称
+    { key: 'emby_template_user_name', value: '' },  // 模板用户名称
+    { key: 'allow_master_direct_fallback', value: 'false' }, // 严格隔离大号风险，默认禁止大号直链穿透给小号
+    { key: 'allow_master_for_guests', value: 'false' }       // 游客默认走本地回源
   ];
 
   for (const item of defaults) {
@@ -273,8 +285,48 @@ const dbService = {
       }
     }
   },
+  recordUserFile(userId, sha1, pickcode, fileId = '') {
+    if (!userId || !sha1 || !pickcode) return;
+    const now = new Date().toISOString();
+    try {
+      db.prepare(`
+        INSERT INTO user_files (user_id, sha1, pickcode, file_id, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, sha1) DO UPDATE SET
+          pickcode = excluded.pickcode,
+          file_id = COALESCE(NULLIF(excluded.file_id, ''), user_files.file_id)
+      `).run(userId, sha1, pickcode, fileId, now);
+      // 同时同步更新全局文件用户列表
+      this.recordFileUser(sha1, userId);
+    } catch (e) {
+      console.warn('[DB] recordUserFile 异常:', e.message);
+    }
+  },
+  getUserFile(userId, sha1) {
+    if (!userId || !sha1) return null;
+    try {
+      return db.prepare("SELECT * FROM user_files WHERE user_id = ? AND sha1 = ?").get(userId, sha1);
+    } catch (e) {
+      return null;
+    }
+  },
   findRecentPeerWithFile(sha1, excludeUserId) {
-    const file = db.prepare("SELECT users_json FROM files WHERE sha1 = ?").get(sha1);
+    if (!sha1) return null;
+    // 优先从 user_files 查询持有该文件的其他小号节点
+    try {
+      const peer = db.prepare(`
+        SELECT uf.user_id, uf.pickcode, uf.file_id, u.username, u.cookie_115
+        FROM user_files uf
+        JOIN users u ON uf.user_id = u.id
+        WHERE uf.sha1 = ? AND uf.user_id != ? AND u.cookie_status = 'active' AND u.cookie_115 IS NOT NULL
+        ORDER BY uf.id DESC
+        LIMIT 1
+      `).get(sha1, excludeUserId || 0);
+      if (peer) return peer;
+    } catch (e) {}
+
+    // 备用从 files.users_json 查询
+    const file = db.prepare("SELECT users_json, file_id, pickcode FROM files WHERE sha1 = ?").get(sha1);
     if (!file) return null;
     let users = [];
     try { users = JSON.parse(file.users_json || '[]'); } catch (e) { }
@@ -282,7 +334,13 @@ const dbService = {
       if (String(uid) !== String(excludeUserId)) {
         const user = db.prepare("SELECT id, username, cookie_115 FROM users WHERE id = ? AND cookie_status = 'active'").get(uid);
         if (user && user.cookie_115) {
-          return user;
+          return {
+            user_id: user.id,
+            username: user.username,
+            cookie_115: user.cookie_115,
+            file_id: file.file_id,
+            pickcode: file.pickcode
+          };
         }
       }
     }

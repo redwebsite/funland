@@ -141,198 +141,203 @@ function createEmbyMiddleware() {
       }
     }
 
-    const targetPickcode = (fileInfo && fileInfo.pickcode) || (mediaMetadata && mediaMetadata.pickcode) || '';
+    // 提取源文件的关键元数据
+    let sourcePickcode = (fileInfo && fileInfo.pickcode) || (mediaMetadata && mediaMetadata.pickcode) || '';
+    if (!sourcePickcode && mediaMetadata && mediaMetadata.filePath) {
+      const match = mediaMetadata.filePath.match(/pickcode=([a-z0-9]+)/i);
+      if (match) sourcePickcode = match[1];
+    }
+    let sourceSha1 = fileInfo ? fileInfo.sha1 : '';
+    let sourceFileId = fileInfo ? fileInfo.file_id : '';
+    let sourceFilename = (fileInfo && fileInfo.filename) || (mediaMetadata ? mediaMetadata.filename : '');
+    let sourceSize = (fileInfo && fileInfo.filesize) || (mediaMetadata ? mediaMetadata.size : 0);
 
-    // 3. 执行三级智能加速逻辑
+    // 若本地索引尚未收录该文件的完整 SHA1 或 fileId，利用源盘直链接口快速探测指纹 (仅供沉淀索引与跨号秒传使用，绝不发送给小号客户端播放)
+    if ((!sourceSha1 || !sourceFileId) && sourcePickcode) {
+      try {
+        const probe = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
+        if (probe && probe.success) {
+          if (probe.sha1 && !sourceSha1) sourceSha1 = probe.sha1;
+          if (probe.fileId && !sourceFileId) sourceFileId = probe.fileId;
+          if (probe.filename && !sourceFilename) sourceFilename = probe.filename;
+          dbService.recordFileIndex(sourceSha1 || `SHA1_${sourcePickcode}`, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
+        }
+      } catch (e) {}
+    }
+
     let resolvedDirectUrl = null;
     let accelerationModeUsed = 'NONE';
+    let resolvedUid = '';
 
-    // 优先：若 Emby 媒体路径本身为 P115StrmHelper / HTTP 302 节点直链，直接按客户端真实 UA 高速解析出 115 官方 CDN 真实直链
-    if (mediaMetadata && mediaMetadata.filePath && (mediaMetadata.filePath.startsWith('http://') || mediaMetadata.filePath.startsWith('https://'))) {
-      try {
-        const helperHeaders = {};
-        if (clientUa) helperHeaders['User-Agent'] = clientUa;
-        const res = await axios.get(mediaMetadata.filePath, {
-          headers: helperHeaders,
-          maxRedirects: 0,
-          validateStatus: s => s >= 200 && s < 400,
-          timeout: 5000,
-          httpsAgent
-        });
-        if (res.status >= 300 && res.status < 400 && res.headers.location) {
-          resolvedDirectUrl = res.headers.location;
-          accelerationModeUsed = userCookie ? 'STEP1_OWN' : 'STEP3_SOURCE';
-          console.log(`✅ [${accelerationModeUsed === 'STEP1_OWN' ? 'Step 1' : 'Step 3'} 命中] 直链节点解析成功，获得 115 官方 CDN 链接: ${resolvedDirectUrl.substring(0, 60)}...`);
-        }
-      } catch (e) {
-        if (e.response && e.response.headers && e.response.headers.location) {
-          resolvedDirectUrl = e.response.headers.location;
-          accelerationModeUsed = userCookie ? 'STEP1_OWN' : 'STEP3_SOURCE';
-          console.log(`✅ [${accelerationModeUsed === 'STEP1_OWN' ? 'Step 1' : 'Step 3'} 命中] 直链节点解析成功，获得 115 官方 CDN 链接: ${resolvedDirectUrl.substring(0, 60)}...`);
+    // ==========================================
+    // 核心加速路由 A：用户已绑定 115 小号 (100% 由小号自行消化流量，大号彻底风险隔离)
+    // ==========================================
+    if (userCookie) {
+      console.log(`🔍 [Step 1 检查小号盘] 用户 ${currentUserName} 已绑定 115，检查小号盘内是否已存在该视频...`);
+
+      // 1. 先查本地 user_files 索引库 (该用户是否先前转存过该视频)
+      if (sourceSha1 && currentUser) {
+        const userSaved = dbService.getUserFile(currentUser.id, sourceSha1);
+        if (userSaved && userSaved.pickcode) {
+          const linkRes = await openApi115.getUserDirectLink(userCookie, userSaved.pickcode, userSaved.file_id, clientUa);
+          if (linkRes.success) {
+            resolvedDirectUrl = linkRes.downloadUrl;
+            resolvedUid = linkRes.uid;
+            accelerationModeUsed = 'STEP1_OWN_INDEX';
+            console.log(`✅ [Step 1 命中] 从小号本地历史索引直出: Pickcode=${userSaved.pickcode}, UID=${resolvedUid || '小号'}`);
+          }
         }
       }
-    }
 
-    // --- STEP 1: 用户自有网盘匹配 (50ms) ---
-    if (!resolvedDirectUrl && userCookie) {
-      console.log(`🔍 [Step 1 用户盘] 检索用户 ${currentUserName} 的 115 资源: ${targetPickcode ? `Pickcode=${targetPickcode}` : `名称="${mediaMetadata ? mediaMetadata.filename : itemId}"`}`);
-      if (targetPickcode) {
-        const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '', clientUa);
+      // 2. 尝试用 sourcePickcode 直接以小号 Cookie 解析 (若小号恰好拥有同源文件)
+      if (!resolvedDirectUrl && sourcePickcode) {
+        const linkRes = await openApi115.getUserDirectLink(userCookie, sourcePickcode, sourceFileId, clientUa);
         if (linkRes.success) {
           resolvedDirectUrl = linkRes.downloadUrl;
-          accelerationModeUsed = 'STEP1_OWN';
-          console.log(`✅ [Step 1 命中] 用户 ${currentUserName} 自有网盘直链解析成功 (Pickcode: ${targetPickcode})`);
-        } else {
-          console.warn(`⚠️ [Step 1] 用户网盘解析 Pickcode (${targetPickcode}) 直链未成功: ${linkRes.error}`);
+          resolvedUid = linkRes.uid;
+          accelerationModeUsed = 'STEP1_OWN_PICKCODE';
+          console.log(`✅ [Step 1 命中] 小号直接持有该 Pickcode 资源，小号直链签发成功 (UID: ${resolvedUid})`);
+          if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, sourcePickcode, sourceFileId);
         }
-      } else if (mediaMetadata && (mediaMetadata.filename || mediaMetadata.name)) {
-        const searchTarget = mediaMetadata.filename || mediaMetadata.name;
-        const searchRes = await openApi115.searchUserDrive(userCookie, searchTarget);
+      }
+
+      // 3. 在小号网盘全局搜索同名媒体文件
+      if (!resolvedDirectUrl && sourceFilename) {
+        const searchRes = await openApi115.searchUserDrive(userCookie, sourceFilename);
         if (searchRes.found && searchRes.pickcode) {
-          console.log(`🎯 [Step 1 搜索命中] 在用户网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
-          const linkRes = await openApi115.getDirectLink(userCookie, searchRes.pickcode, searchRes.fileId, clientUa);
+          console.log(`🎯 [Step 1 搜索命中] 在小号网盘匹配到已存文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
+          const linkRes = await openApi115.getUserDirectLink(userCookie, searchRes.pickcode, searchRes.fileId, clientUa);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
-            accelerationModeUsed = 'STEP1_OWN';
-            dbService.recordFileIndex(
-              searchRes.sha1 || `SHA1_${Date.now()}`,
-              searchRes.filename,
-              searchRes.filesize || 0,
-              searchRes.pickcode,
-              searchRes.fileId,
-              itemId
+            resolvedUid = linkRes.uid;
+            accelerationModeUsed = 'STEP1_OWN_SEARCH';
+            console.log(`✅ [Step 1 命中] 由用户 ${currentUserName} 自有 Cookie 签发直链播放 (UID: ${resolvedUid})`);
+            if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, searchRes.pickcode, searchRes.fileId);
+          }
+        }
+      }
+
+      // 4. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】
+      if (!resolvedDirectUrl) {
+        console.log(`📦 [Step 2 秒传转存] 小号未持有 "${sourceFilename || itemId}"，开始秒传转存至小号秒存目录...`);
+
+        // 确保小号秒存目录有效存在 (若用户未配置 save_cid_115 则自动探测/创建 /EmbyCache)
+        let targetCid = currentUser ? currentUser.save_cid_115 : '';
+        if (!targetCid || targetCid === '0') {
+          const dirEnsure = await openApi115.ensureCacheDirectory(userCookie, (currentUser && currentUser.save_dir_115) || '/EmbyCache');
+          if (dirEnsure.success && dirEnsure.cid) {
+            targetCid = dirEnsure.cid;
+            if (currentUser) dbService.updateUserSaveDir(currentUser.id, currentUser.save_dir_115 || '/EmbyCache', targetCid);
+          }
+        }
+
+        // 4.1 优先分布式秒传 (P2P 用户间转存，完全不碰大号源盘)
+        if (sourceSha1 && currentUser) {
+          const peerUser = dbService.findRecentPeerWithFile(sourceSha1, currentUser.id);
+          if (peerUser && peerUser.cookie_115 && (peerUser.file_id || sourceFileId)) {
+            console.log(`🤝 [Step 2 P2P互传] 发现节点用户 ${peerUser.username} 拥有相同资源，秒传至用户 ${currentUserName}`);
+            const p2pRes = await openApi115.shareAndReceiveFile(
+              peerUser.cookie_115,
+              userCookie,
+              peerUser.file_id || sourceFileId,
+              targetCid,
+              sourceFilename
             );
-            console.log(`✅ [Step 1 命中] 用户 ${currentUserName} 自有网盘直链获取成功: ${searchRes.filename}`);
-          } else {
-            console.warn(`⚠️ [Step 1] 获取直链失败: ${linkRes.error}`);
-          }
-        } else {
-          console.log(`ℹ️ [Step 1 未命中] 用户网盘未检索到匹配文件: "${searchTarget}"`);
-        }
-      }
-    } else if (!userCookie && !resolvedDirectUrl) {
-      console.log(`ℹ️ [Step 1 跳过] 用户 ${currentUserName} 尚未绑定有效 115 Cookie`);
-    }
-
-    // --- STEP 2: 用户间智能秒传加速 (5ms) ---
-    if (!resolvedDirectUrl && fileInfo && fileInfo.sha1 && userCookie) {
-      const peerUser = dbService.findRecentPeerWithFile(fileInfo.sha1, currentUser ? currentUser.id : 0);
-      if (peerUser && peerUser.cookie_115) {
-        console.log(`🤝 [Step 2 用户互传] 发现节点用户 ${peerUser.username} 拥有相同 SHA1，秒传至当前用户网盘`);
-        const targetCid = currentUser && currentUser.save_cid_115 ? currentUser.save_cid_115 : 0;
-        const transferRes = await openApi115.fastTransfer(
-          userCookie,
-          fileInfo.sha1,
-          fileInfo.filesize,
-          fileInfo.filename,
-          targetCid
-        );
-        if (transferRes.success && transferRes.pickcode) {
-          const linkRes = await openApi115.getDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
-          if (linkRes.success) {
-            resolvedDirectUrl = linkRes.downloadUrl;
-            accelerationModeUsed = 'STEP2_PEER';
-            // 记录当前用户也拥有该文件
-            if (currentUser) dbService.recordFileUser(fileInfo.sha1, currentUser.id);
+            if (p2pRes.success && p2pRes.pickcode) {
+              const linkRes = await openApi115.getUserDirectLink(userCookie, p2pRes.pickcode, p2pRes.fileId, clientUa);
+              if (linkRes.success) {
+                resolvedDirectUrl = linkRes.downloadUrl;
+                resolvedUid = linkRes.uid;
+                accelerationModeUsed = 'STEP2_PEER_P2P';
+                console.log(`🎉 [Step 2 P2P成功] 用户间互传完成！直链由小号 Cookie 签发 (UID: ${resolvedUid})`);
+                dbService.recordUserFile(currentUser.id, sourceSha1, p2pRes.pickcode, p2pRes.fileId);
+              }
+            }
           }
         }
-      }
-    }
 
-    // --- STEP 3: 源网盘 / Cookie 池兜底保障 ---
-    if (!resolvedDirectUrl) {
-      const sourceCookieObj = dbService.getActiveSourceCookie();
-      if (sourceCookieObj) {
-        console.log(`📦 [Step 3 源盘兜底] 从公共/源网盘资源池提取直链或执行秒传`);
-        dbService.updateCookieUsed(sourceCookieObj.id);
+        // 4.2 若 P2P 未命中，通过源网盘 Cookie 池秒传转存至小号
+        if (!resolvedDirectUrl && sourceFileId) {
+          const sourceCookieObj = dbService.getActiveSourceCookie();
+          if (sourceCookieObj && sourceCookieObj.cookie) {
+            console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name || 'Master'}) 秒传转存至小号目录 (${targetCid})...`);
+            dbService.updateCookieUsed(sourceCookieObj.id);
 
-        if (targetPickcode) {
-          const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, targetPickcode, fileInfo ? fileInfo.file_id : '', clientUa);
-          if (linkRes.success) {
-            resolvedDirectUrl = linkRes.downloadUrl;
-            accelerationModeUsed = 'STEP3_SOURCE';
-            console.log(`✅ [Step 3 命中] 源网盘根据 Pickcode (${targetPickcode}) 直链解析成功`);
-          }
-        } else if (mediaMetadata && (mediaMetadata.filename || mediaMetadata.name)) {
-          const searchTarget = mediaMetadata.filename || mediaMetadata.name;
-          const searchRes = await openApi115.searchUserDrive(sourceCookieObj.cookie, searchTarget);
-          if (searchRes.found && searchRes.pickcode) {
-            console.log(`🎯 [Step 3 搜索命中] 在源网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
-            const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, searchRes.pickcode, searchRes.fileId, clientUa);
-            if (linkRes.success) {
-              resolvedDirectUrl = linkRes.downloadUrl;
-              accelerationModeUsed = 'STEP3_SOURCE';
-              dbService.recordFileIndex(
-                searchRes.sha1 || `SHA1_${Date.now()}`,
-                searchRes.filename,
-                searchRes.filesize || 0,
-                searchRes.pickcode,
-                searchRes.fileId,
-                itemId
-              );
-              console.log(`✅ [Step 3 命中] 源网盘直链获取成功: ${searchRes.filename}`);
+            const transferRes = await openApi115.shareAndReceiveFile(
+              sourceCookieObj.cookie,
+              userCookie,
+              sourceFileId,
+              targetCid,
+              sourceFilename
+            );
+
+            if (transferRes.success && transferRes.pickcode) {
+              const linkRes = await openApi115.getUserDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
+              if (linkRes.success) {
+                resolvedDirectUrl = linkRes.downloadUrl;
+                resolvedUid = linkRes.uid;
+                accelerationModeUsed = 'STEP3_SOURCE_TRANSFERRED';
+                console.log(`🎉 [Step 3 转存成功] 文件已落库小号秒存目录！直链由小号 Cookie 签发 (UID: ${resolvedUid})，大号风险0`);
+                if (sourceSha1 && currentUser) {
+                  dbService.recordUserFile(currentUser.id, sourceSha1, transferRes.pickcode, transferRes.fileId);
+                  dbService.recordFileUser(sourceSha1, currentUser.id);
+                }
+              }
+            } else {
+              console.warn(`⚠️ [Step 3] 源网盘秒传转存失败: ${transferRes.error}`);
             }
           } else {
-            console.log(`ℹ️ [Step 3 未命中] 源网盘未检索到匹配文件: "${searchTarget}"`);
+            console.warn(`ℹ️ [Step 3] 源网盘 Cookie 资源池暂无活跃账号，无法执行跨号秒传转存`);
           }
         }
+      }
+
+      // 5. 严格隔离校验：若未能从小号生成专属直链
+      if (!resolvedDirectUrl) {
+        const allowMasterFallback = dbService.getSetting('allow_master_direct_fallback', 'false') === 'true';
+        if (allowMasterFallback && sourcePickcode) {
+          console.warn(`⚠️ [大号兜底警告] 小号转存未就绪，但管理员设置允许大号直链兜底，正在签发源盘大号直链...`);
+          const masterLink = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
+          if (masterLink.success) {
+            resolvedDirectUrl = masterLink.downloadUrl;
+            resolvedUid = masterLink.uid;
+            accelerationModeUsed = 'MASTER_FALLBACK_RISK';
+          }
+        } else {
+          console.log(`🛡️ [大号风险隔离] 小号未持有该文件且无法转存，已彻底阻断大号 CDN 泄露！透明回退至真实 Emby 串流`);
+          dbService.logPlayback(itemId, sourceFilename || 'Media Stream', currentUserName, clientIp, 'FALLBACK_EMBY_ISOLATED', 'UPSTREAM_PROXY');
+          return next();
+        }
+      }
+    } else {
+      // ==========================================
+      // 核心加速路由 B：未绑定 115 的用户 (游客 / 本地回源模式)
+      // ==========================================
+      const allowMasterForGuests = dbService.getSetting('allow_master_for_guests', 'false') === 'true';
+      if (allowMasterForGuests && sourcePickcode) {
+        const masterLink = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
+        if (masterLink.success) {
+          resolvedDirectUrl = masterLink.downloadUrl;
+          resolvedUid = masterLink.uid;
+          accelerationModeUsed = 'MASTER_GUEST_DIRECT';
+        }
+      }
+      if (!resolvedDirectUrl) {
+        console.log(`ℹ️ [游客模式] 用户 ${currentUserName} 尚未绑定 115，透明回退至真实 Emby 服务器本地串流`);
+        dbService.logPlayback(itemId, sourceFilename || 'Media Stream', currentUserName, clientIp, 'FALLBACK_EMBY_GUEST', 'UPSTREAM_PROXY');
+        return next();
       }
     }
 
     // 4. 判断结果：如果解析到了直链，进行 302 Found 重定向并缓存 30 分钟
     if (resolvedDirectUrl) {
-      console.log(`🚀 [302 Found] 成功获取直链，重定向客户端至 CDN: ${resolvedDirectUrl.substring(0, 60)}...`);
+      console.log(`🚀 [302 Found] 成功获取直链 (模式: ${accelerationModeUsed}, UID: ${resolvedUid || '小号'})，重定向客户端至 CDN: ${resolvedDirectUrl.substring(0, 60)}...`);
       // 存入滑动过期缓存 (默认 1800 秒 / 30 分钟)
       cacheScheduler.set(cacheKey, resolvedDirectUrl, config.cache.ttlSeconds);
 
-      // 从 115 官方 CDN 链接中提取 SHA1 与文件名进行指纹沉淀与秒传同步
-      try {
-        const sha1Match = resolvedDirectUrl.match(/115cdn\.net\/([a-f0-9]{40})\//i);
-        const sha1 = sha1Match ? sha1Match[1] : '';
-        const urlSegments = resolvedDirectUrl.split('?')[0].split('/');
-        const encodedName = urlSegments[urlSegments.length - 1];
-        const realFilename = encodedName ? decodeURIComponent(encodedName) : (mediaMetadata ? mediaMetadata.name : 'Media');
-        let realSize = mediaMetadata ? (mediaMetadata.size || 0) : 0;
-
-        if (sha1) {
-          // 异步在后台获取真实 Content-Length 并执行指纹沉淀与秒传
-          (async () => {
-            try {
-              if (realSize === 0 && resolvedDirectUrl) {
-                try {
-                  const headRes = await axios.head(resolvedDirectUrl, {
-                    headers: clientUa ? { 'User-Agent': clientUa } : {},
-                    timeout: 4000,
-                    httpsAgent
-                  });
-                  if (headRes && headRes.headers && headRes.headers['content-length']) {
-                    realSize = parseInt(headRes.headers['content-length'], 10) || 0;
-                  }
-                } catch (e) {}
-              }
-
-              dbService.recordFileIndex(sha1, realFilename, realSize, targetPickcode, '', itemId);
-              if (currentUser) dbService.recordFileUser(sha1, currentUser.id);
-
-              // 若当前用户已绑定 115 且配置了秒传目标目录，尝试在后台秒传留存
-              if (userCookie && currentUser && currentUser.save_cid_115) {
-                const targetCid = currentUser.save_cid_115;
-                openApi115.fastTransfer(userCookie, sha1, realSize, realFilename, targetCid).then(res => {
-                  if (res && res.success) {
-                    console.log(`💾 [自动秒传] 视频 "${realFilename}" (${(realSize / 1073741824).toFixed(2)} GB) 已转存至用户 ${currentUserName} 的 115 目录 (Cid: ${targetCid})`);
-                  } else {
-                    console.log(`ℹ️ [秒传提示] 视频 "${realFilename}" 转存小号提示: ${res ? (res.msg || res.error) : '115风控限制或无需转存'}`);
-                  }
-                }).catch(() => {});
-              }
-            } catch (e) {}
-          })();
-        }
-      } catch (e) {}
-
       // 记录播放历史与热度
-      if (fileInfo) dbService.updateFilePlayback(fileInfo.sha1);
-      dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
+      if (sourceSha1) dbService.updateFilePlayback(sourceSha1);
+      dbService.logPlayback(itemId, sourceFilename || 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
 
       // 返回标准 HTTP 302 Found 重定向，附带全套 CORS 头部与防缓存头部保障各端播放器顺畅跟随
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -347,7 +352,7 @@ function createEmbyMiddleware() {
 
     // 5. 兜底回退：如果未配置网盘或直链解析未命中，无缝透明代理上游 Emby 原始流，确保播放绝不报错！
     console.log(`⚠️ [Fallback] 115 链路未命中，透明回退至真实 Emby 服务器串流`);
-    dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, 'FALLBACK_EMBY', 'UPSTREAM_PROXY');
+    dbService.logPlayback(itemId, sourceFilename || 'Media Stream', currentUserName, clientIp, 'FALLBACK_EMBY', 'UPSTREAM_PROXY');
     return next();
   }
 

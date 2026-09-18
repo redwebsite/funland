@@ -190,8 +190,26 @@
               <input type="number" class="form-input" id="cfgTtl" value="1800" min="300" max="86400">
               <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">默认 1800 秒（30分钟）。在此期间用户每次播放均重置 30 分钟</small>
             </div>
+
+            <div class="form-group">
+              <label class="form-label">大号直链防穿透保护策略</label>
+              <select class="form-select" id="cfgMasterDirectFallback">
+                <option value="false">🛡️ 严格隔离大号风险 (推荐：小号直连失败时透明回退 Emby 本地串流，严禁泄漏大号直链)</option>
+                <option value="true">⚠️ 允许大号直链兜底 (有风控风险：小号失败时直接下发大号 CDN 链接)</option>
+              </select>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">NextEmby 核心防封机制：开启后阻断一切将大号 CDN 直链下发给小号客户端的可能</small>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">游客/未绑定用户兜底策略</label>
+              <select class="form-select" id="cfgMasterForGuests">
+                <option value="false">🏠 本地回源模式 (推荐：未绑定 115 的用户走 Emby 原始串流)</option>
+                <option value="true">⚡ 允许源盘直连 (直接向游客发放源盘直链，极易消耗大号配额)</option>
+              </select>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">建议保持本地回源，引导新用户在门户自备 115 账号绑定</small>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存 Emby 配置</button>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存 Emby 与安全隔离配置</button>
         </form>
       </div>
 
@@ -229,9 +247,26 @@
 
     <!-- 选项卡 3: 115 账号资源池 -->
     <section id="tab-cookie-pool" class="tab-section">
+      <!-- 次世代大号隔离提示 -->
+      <div class="glass-panel" style="margin-bottom: 20px; border-left: 4px solid #10b981;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h3 style="margin: 0 0 6px 0; font-size: 1.05rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+              <span>🛡️</span> 大号零流量物理隔离机制已激活
+            </h3>
+            <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">
+              小号播放时 <strong>100% 仅由小号自身 Cookie</strong> 直接请求 115 CDN（UID归属小号），源网盘仅在小号缺少资源时执行秒传复制，绝不直接将大号 CDN 直链给小号，彻底避免大号封禁。
+            </p>
+          </div>
+          <button type="button" class="btn btn-primary" onclick="openAdminQrModal()" style="white-space: nowrap; padding: 10px 18px; font-weight: 700;">
+            📱 手机扫码添加源网盘
+          </button>
+        </div>
+      </div>
+
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>🍪</span> 添加 115 账号至资源池 (源盘 / 公共转存)</h2>
+          <h2 class="panel-title"><span>🍪</span> 手动添加 115 账号至资源池 (源盘 / 公共转存)</h2>
         </div>
         <form id="addPoolForm" onsubmit="addCookieToPool(event)">
           <div class="form-grid">
@@ -441,8 +476,24 @@
     </div>
   </div>
 
+  <!-- 扫码添加源网盘弹窗 -->
+  <div id="adminQrModal" class="admin-login-overlay" style="display: none;">
+    <div class="admin-login-card" style="max-width: 380px; text-align: center;">
+      <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;">📱 扫码添加源网盘至资源池</h3>
+      <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">请使用 115 手机端 App 扫码确认登录，系统将自动录入源盘 Cookie 供全站小号秒传使用</p>
+      <div style="background: #fff; padding: 12px; border-radius: 12px; display: inline-block; margin-bottom: 12px;">
+        <img id="adminQrImg" src="" style="width: 200px; height: 200px; display: block;" alt="二维码">
+      </div>
+      <div id="adminQrStatus" style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 16px; font-weight: 500;">⏳ 正在初始化扫码会话...</div>
+      <div style="display: flex; gap: 10px;">
+        <button class="btn btn-secondary" style="flex: 1;" onclick="refreshAdminQr()">🔄 刷新</button>
+        <button class="btn btn-danger" style="flex: 1;" onclick="closeAdminQrModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js?v=2.0.2"></script>
+  <script src="app.js?v=2.0.3"></script>
 </body>
 </html>

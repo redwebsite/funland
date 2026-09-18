@@ -135,44 +135,12 @@ class OpenApi115 {
   }
 
   /**
-   * 4. 获取下载直链
+   * 4. 专属小号直链解析：严格仅使用用户自有 Cookie 请求 115 官方接口，直链签名 100% 归属于小号 UID，彻底杜绝大号泄露
    */
-  async getDirectLink(cookie, pickcode, fileId = '', clientUserAgent = '') {
+  async getUserDirectLink(cookie, pickcode, fileId = '', clientUserAgent = '') {
+    if (!cookie) return { success: false, error: '缺少用户 115 Cookie' };
     if (!pickcode) return { success: false, error: '缺少 pickcode' };
 
-    // 1. 优先通过系统直链服务节点解析（按客户端真实 User-Agent 动态签名，彻底避免 115 CDN invalid signature 403 拒收）
-    try {
-      const helperUrl = `http://158.101.5.12:65041/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=${pickcode}`;
-      const reqHeaders = {};
-      if (clientUserAgent) {
-        reqHeaders['User-Agent'] = clientUserAgent;
-      }
-      const res = await this.http.get(helperUrl, {
-        headers: reqHeaders,
-        maxRedirects: 0,
-        validateStatus: s => s >= 200 && s < 400,
-        timeout: 5000
-      });
-      if (res.status >= 300 && res.status < 400 && res.headers.location) {
-        return {
-          success: true,
-          downloadUrl: res.headers.location,
-          fileId: fileId || pickcode,
-          pickcode
-        };
-      }
-    } catch (e) {
-      if (e.response && e.response.headers && e.response.headers.location) {
-        return {
-          success: true,
-          downloadUrl: e.response.headers.location,
-          fileId: fileId || pickcode,
-          pickcode
-        };
-      }
-    }
-
-    // 2. 备用通过 115 官方 Chrome 接口尝试提取
     try {
       const url = `https://proapi.115.com/app/chrome/downurl?pickcode=${pickcode}`;
       const res = await this.http.get(url, {
@@ -181,62 +149,248 @@ class OpenApi115 {
           Referer: 'https://115.com/',
           'User-Agent': clientUserAgent || USER_AGENT
         },
-        timeout: 4000
+        timeout: 5000
       });
 
       if (res.data && res.data.state && res.data.data) {
         const fileObj = fileId ? res.data.data[fileId] : Object.values(res.data.data)[0];
         if (fileObj && fileObj.url && fileObj.url.url) {
+          const directUrl = fileObj.url.url;
+          const uMatch = directUrl.match(/[?&]u=(\d+)/);
+          const linkUid = uMatch ? uMatch[1] : '';
+
           return {
             success: true,
-            downloadUrl: fileObj.url.url,
+            downloadUrl: directUrl,
             fileId: fileId || Object.keys(res.data.data)[0],
-            filename: fileObj.file_name || ''
+            filename: fileObj.file_name || '',
+            filesize: fileObj.file_size || 0,
+            pickcode,
+            uid: linkUid
           };
         }
       }
-      return { success: false, error: '无法从 115 解析到直链地址' };
+      return {
+        success: false,
+        error: res.data ? (res.data.msg || '无法从小号网盘解析到直链地址') : '115上游无响应'
+      };
     } catch (e) {
       return { success: false, error: e.message };
     }
   }
 
   /**
-   * 5. 按 SHA1 秒传转存文件到用户指定目录
+   * 5. 源网盘直链/元数据解析助手 (仅供提取 SHA1/文件名/file_id 等指纹，或管理员明确开启大号兜底时使用)
    */
-  async fastTransfer(cookie, sha1, filesize, filename, targetCid = 0) {
+  async getSourceDirectLink(pickcode, clientUserAgent = '') {
+    if (!pickcode) return { success: false, error: '缺少 pickcode' };
     try {
-      const res = await this.http.post(
-        'https://uplb.115.com/3.0/initupload.php',
+      const helperUrl = `http://158.101.5.12:65041/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=${pickcode}`;
+      const reqHeaders = {};
+      if (clientUserAgent) reqHeaders['User-Agent'] = clientUserAgent;
+      const res = await this.http.get(helperUrl, {
+        headers: reqHeaders,
+        maxRedirects: 0,
+        validateStatus: s => s >= 200 && s < 400,
+        timeout: 5000
+      });
+
+      const location = (res.status >= 300 && res.status < 400 && res.headers.location) ? res.headers.location : null;
+      if (location) {
+        const sha1Match = location.match(/115cdn\.net\/([a-f0-9]{40})\//i);
+        const fidMatch = location.match(/d=vip-(\d+)-/i);
+        const uMatch = location.match(/[?&]u=(\d+)/);
+        const urlSegments = location.split('?')[0].split('/');
+        const encodedName = urlSegments[urlSegments.length - 1];
+        const realFilename = encodedName ? decodeURIComponent(encodedName) : '';
+
+        return {
+          success: true,
+          downloadUrl: location,
+          sha1: sha1Match ? sha1Match[1] : '',
+          fileId: fidMatch ? fidMatch[1] : '',
+          filename: realFilename,
+          uid: uMatch ? uMatch[1] : '',
+          pickcode
+        };
+      }
+    } catch (e) {
+      if (e.response && e.response.headers && e.response.headers.location) {
+        const location = e.response.headers.location;
+        const sha1Match = location.match(/115cdn\.net\/([a-f0-9]{40})\//i);
+        const fidMatch = location.match(/d=vip-(\d+)-/i);
+        const uMatch = location.match(/[?&]u=(\d+)/);
+        const urlSegments = location.split('?')[0].split('/');
+        const encodedName = urlSegments[urlSegments.length - 1];
+        const realFilename = encodedName ? decodeURIComponent(encodedName) : '';
+
+        return {
+          success: true,
+          downloadUrl: location,
+          sha1: sha1Match ? sha1Match[1] : '',
+          fileId: fidMatch ? fidMatch[1] : '',
+          filename: realFilename,
+          uid: uMatch ? uMatch[1] : '',
+          pickcode
+        };
+      }
+      return { success: false, error: e.message };
+    }
+    return { success: false, error: '未能从源盘节点解析到重定向直链' };
+  }
+
+  /**
+   * 通用直链获取接口 (优先小号自身 Cookie 签名)
+   */
+  async getDirectLink(cookie, pickcode, fileId = '', clientUserAgent = '') {
+    if (cookie) {
+      return this.getUserDirectLink(cookie, pickcode, fileId, clientUserAgent);
+    }
+    return this.getSourceDirectLink(pickcode, clientUserAgent);
+  }
+
+  /**
+   * 6. 115 账号间官方分享与转存 (核心隔离机制：将源盘文件瞬间秒传复制到小号的指定目录)
+   */
+  async shareAndReceiveFile(sourceCookie, receiverCookie, fileId, targetCid = '0', filename = '') {
+    if (!sourceCookie || !receiverCookie || !fileId) {
+      return { success: false, error: '缺少转存必要参数 (sourceCookie, receiverCookie 或 fileId)' };
+    }
+
+    try {
+      // 1. 源账号创建复制分享 (share_to: 'copy' 为私密复制分享)
+      const sendRes = await this.http.post(
+        'https://webapi.115.com/share/send',
         new URLSearchParams({
-          appid: '0',
-          appversion: '30.8.0',
-          fileid: sha1,
-          filesize: String(filesize),
-          filename: filename,
-          target: `U_1_${targetCid}`
+          file_ids: String(fileId),
+          share_to: 'copy'
         }).toString(),
         {
           headers: {
+            Cookie: sourceCookie,
+            Referer: 'https://115.com/',
             'Content-Type': 'application/x-www-form-urlencoded',
-            Cookie: cookie
-          }
+            'User-Agent': USER_AGENT
+          },
+          timeout: 6000
         }
       );
 
-      if (res.data && (res.data.status === 2 || res.data.status === '2')) {
-        // status 2 表示秒传完成
-        return {
-          success: true,
-          pickcode: res.data.pickcode || '',
-          fileId: res.data.fileid || '',
-          msg: '秒传转存成功'
-        };
+      let shareCode = '';
+      let receiveCode = '';
+
+      if (sendRes.data && sendRes.data.state && sendRes.data.data) {
+        shareCode = sendRes.data.data.share_code;
+        receiveCode = sendRes.data.data.receive_code;
+      } else {
+        const errMsg = sendRes.data ? (sendRes.data.msg || sendRes.data.error || '创建分享链接失败') : '源盘响应异常';
+        return { success: false, error: `源盘分享失败: ${errMsg}` };
       }
+
+      if (!shareCode || !receiveCode) {
+        return { success: false, error: '未能获取到有效分享码或提取码' };
+      }
+
+      // 2. 小号接收转存至其指定的秒存目录
+      const cleanCid = String(targetCid || '0');
+      const receiveRes = await this.http.post(
+        'https://webapi.115.com/share/receive',
+        new URLSearchParams({
+          share_code: shareCode,
+          receive_code: receiveCode,
+          cid: cleanCid,
+          file_id: String(fileId)
+        }).toString(),
+        {
+          headers: {
+            Cookie: receiverCookie,
+            Referer: 'https://115.com/',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT
+          },
+          timeout: 8000
+        }
+      );
+
+      if (!receiveRes.data || !receiveRes.data.state) {
+        const errMsg = receiveRes.data ? (receiveRes.data.msg || receiveRes.data.error || '转存请求失败') : '转存响应异常';
+        return { success: false, error: `小号转存失败: ${errMsg}` };
+      }
+
+      // 3. 转存成功后，从小号目标目录或搜索获取新生成的文件 pickcode
+      let newPickcode = '';
+      let newFileId = '';
+
+      try {
+        const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=20&format=json&o=user_ptime&asc=0`;
+        const listRes = await this.http.get(listUrl, {
+          headers: {
+            Cookie: receiverCookie,
+            Referer: 'https://115.com/',
+            'User-Agent': USER_AGENT
+          },
+          timeout: 5000
+        });
+
+        if (listRes.data && listRes.data.state && Array.isArray(listRes.data.data) && listRes.data.data.length > 0) {
+          let matched = null;
+          if (filename) {
+            matched = listRes.data.data.find(f => f.n === filename || f.n.includes(filename) || filename.includes(f.n));
+          }
+          if (!matched) matched = listRes.data.data[0];
+          if (matched && matched.pc) {
+            newPickcode = matched.pc;
+            newFileId = matched.fid;
+          }
+        }
+      } catch (e) {
+        console.warn('[115] 查验转存目录文件异常:', e.message);
+      }
+
+      // 若目录列出未拿到，备用按文件名在小号盘内检索
+      if (!newPickcode && filename) {
+        const search = await this.searchUserDrive(receiverCookie, filename);
+        if (search.found && search.pickcode) {
+          newPickcode = search.pickcode;
+          newFileId = search.fileId;
+        }
+      }
+
       return {
-        success: false,
-        msg: res.data ? res.data.message || '文件未在115云端命中秒传' : '未知响应'
+        success: true,
+        pickcode: newPickcode,
+        fileId: newFileId,
+        targetCid: cleanCid,
+        msg: '转存秒传成功'
       };
+    } catch (e) {
+      console.error('❌ [115] 分享转存异常:', e.message);
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 7. 确保用户的秒存目录存在 (若不存在则自动在根目录下创建)
+   */
+  async ensureCacheDirectory(cookie, pathStr = '/EmbyCache') {
+    if (!cookie) return { success: false, error: '缺少 Cookie' };
+    const cleanName = pathStr.replace(/^\/+/, '').split('/')[0] || 'EmbyCache';
+
+    try {
+      const dirs = await this.getDirectories(cookie, '0');
+      if (dirs.success && Array.isArray(dirs.folders)) {
+        const existing = dirs.folders.find(f => f.name === cleanName);
+        if (existing && existing.cid) {
+          return { success: true, cid: String(existing.cid), name: cleanName };
+        }
+      }
+
+      // 未找到则自动在根目录创建
+      const created = await this.createDirectory(cookie, '0', cleanName);
+      if (created.success && created.cid) {
+        return { success: true, cid: String(created.cid), name: cleanName };
+      }
+      return { success: false, error: created.error || '自动创建缓存目录失败' };
     } catch (e) {
       return { success: false, error: e.message };
     }

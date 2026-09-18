@@ -289,6 +289,14 @@ async function loadEmbySettings() {
       if (s.acceleration_mode && document.getElementById('cfgAccelMode')) document.getElementById('cfgAccelMode').value = s.acceleration_mode;
       if (s.cache_ttl_seconds && document.getElementById('cfgTtl')) document.getElementById('cfgTtl').value = s.cache_ttl_seconds;
 
+      // 大号隔离与游客策略
+      if (s.allow_master_direct_fallback !== undefined && document.getElementById('cfgMasterDirectFallback')) {
+        document.getElementById('cfgMasterDirectFallback').value = s.allow_master_direct_fallback;
+      }
+      if (s.allow_master_for_guests !== undefined && document.getElementById('cfgMasterForGuests')) {
+        document.getElementById('cfgMasterForGuests').value = s.allow_master_for_guests;
+      }
+
       // 联动 Emby 同步配置
       if (s.emby_sync_user !== undefined && document.getElementById('cfgEmbySyncUser')) {
         document.getElementById('cfgEmbySyncUser').value = s.emby_sync_user;
@@ -364,7 +372,9 @@ async function saveEmbySettings(e) {
     emby_upstream_url: document.getElementById('cfgEmbyUrl').value.trim(),
     emby_api_key: document.getElementById('cfgEmbyKey').value.trim(),
     acceleration_mode: document.getElementById('cfgAccelMode').value,
-    cache_ttl_seconds: document.getElementById('cfgTtl').value.trim()
+    cache_ttl_seconds: document.getElementById('cfgTtl').value.trim(),
+    allow_master_direct_fallback: document.getElementById('cfgMasterDirectFallback') ? document.getElementById('cfgMasterDirectFallback').value : 'false',
+    allow_master_for_guests: document.getElementById('cfgMasterForGuests') ? document.getElementById('cfgMasterForGuests').value : 'false'
   };
 
   try {
@@ -375,7 +385,7 @@ async function saveEmbySettings(e) {
     });
     const json = await res.json();
     if (json.success) {
-      showToast('Emby 基础连接配置已保存！正在刷新用户列表...');
+      showToast('Emby 与大号安全隔离配置已保存！正在刷新用户列表...');
       fetchEmbyUsersList();
     } else {
       showToast(json.error || '保存失败', 'error');
@@ -454,6 +464,78 @@ async function deleteCookie(id) {
       loadCookiePool();
     }
   } catch (e) { }
+}
+
+// 扫码添加源网盘弹窗逻辑
+let adminQrPollTimer = null;
+let currentAdminQrSession = null;
+
+async function openAdminQrModal() {
+  const modal = document.getElementById('adminQrModal');
+  if (modal) modal.style.display = 'flex';
+  refreshAdminQr();
+}
+
+function closeAdminQrModal() {
+  const modal = document.getElementById('adminQrModal');
+  if (modal) modal.style.display = 'none';
+  if (adminQrPollTimer) {
+    clearInterval(adminQrPollTimer);
+    adminQrPollTimer = null;
+  }
+}
+
+async function refreshAdminQr() {
+  if (adminQrPollTimer) {
+    clearInterval(adminQrPollTimer);
+    adminQrPollTimer = null;
+  }
+  const img = document.getElementById('adminQrImg');
+  const statusEl = document.getElementById('adminQrStatus');
+  if (statusEl) statusEl.innerText = '⏳ 正在向 115 申请扫码凭证...';
+
+  try {
+    const res = await adminFetch('/api/admin/cookie-pool/qr-session', { method: 'POST' });
+    const json = await res.json();
+    if (json.success && json.qrDataUrl) {
+      currentAdminQrSession = json;
+      if (img) img.src = json.qrDataUrl;
+      if (statusEl) statusEl.innerText = '📱 请使用手机端 115 App 扫码确认';
+      startAdminQrPolling(json.uid, json.time, json.sign);
+    } else {
+      if (statusEl) statusEl.innerText = '❌ 二维码生成失败: ' + (json.error || '未知错误');
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerText = '❌ 网络请求异常: ' + e.message;
+  }
+}
+
+function startAdminQrPolling(uid, time, sign) {
+  if (adminQrPollTimer) clearInterval(adminQrPollTimer);
+  adminQrPollTimer = setInterval(async () => {
+    try {
+      const res = await adminFetch(`/api/admin/cookie-pool/qr-status?uid=${uid}&time=${time}&sign=${sign}`);
+      const json = await res.json();
+      const statusEl = document.getElementById('adminQrStatus');
+
+      if (json.saved) {
+        clearInterval(adminQrPollTimer);
+        adminQrPollTimer = null;
+        if (statusEl) statusEl.innerText = `🎉 登录成功！已录入账号: ${json.username || ''} (${json.vipInfo || ''})`;
+        showToast(`🎉 源网盘扫码成功！账号: ${json.username || ''} 已加入资源池`);
+        setTimeout(() => {
+          closeAdminQrModal();
+          loadCookiePool();
+        }, 1500);
+      } else if (json.status === 'scanned') {
+        if (statusEl) statusEl.innerText = '📱 已扫码，请在手机端点击【确认登录】';
+      } else if (json.status === 'expired') {
+        clearInterval(adminQrPollTimer);
+        adminQrPollTimer = null;
+        if (statusEl) statusEl.innerText = '⚠️ 二维码已失效，请点击刷新';
+      }
+    } catch (e) {}
+  }, 2000);
 }
 
 // 缓存列表
