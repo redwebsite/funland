@@ -90,6 +90,7 @@ function createEmbyMiddleware() {
   async function handleStreamInterception(req, res, next) {
     const itemId = req.params.id;
     const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '127.0.0.1';
+    const clientUa = req.headers['user-agent'] || '';
     const clientToken = req.query.api_key || req.headers['x-emby-token'] || req.query['X-Emby-Token'] || '';
     let userId = req.query.UserId || req.query.userId || req.headers['x-emby-user-id'] || '';
 
@@ -106,15 +107,19 @@ function createEmbyMiddleware() {
     const userCookie = currentUser && currentUser.cookie_status === 'active' ? currentUser.cookie_115 : null;
     const currentUserName = currentUser ? currentUser.username : (userId || 'anonymous');
 
-    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, 用户=${currentUserName} (${userId}), IP=${clientIp}`);
+    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, 用户=${currentUserName} (${userId}), UA="${clientUa.substring(0, 50)}", IP=${clientIp}`);
 
-    // 1. 检查 30 分钟滑动过期缓存 (Sliding Expiration Cache)
-    const cacheKey = cacheScheduler.makeKey('stream:direct', itemId, currentUserName);
+    // 1. 检查 30 分钟滑动过期缓存 (结合 UA 指纹，杜绝签名不匹配导致 115 CDN 403)
+    const cacheKey = cacheScheduler.makeKey('stream:direct', itemId, currentUserName, clientUa);
     const cachedDirectUrl = cacheScheduler.get(cacheKey, true); // true = 命中时自动顺延 30 分钟
 
     if (cachedDirectUrl) {
       console.log(`⚡ [Cache Hit] 30分钟缓存命中: ItemId=${itemId}, 剩余TTL滑动刷新`);
       dbService.logPlayback(itemId, 'Cached-Media', currentUserName, clientIp, 'CACHE_HIT', cachedDirectUrl);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Location, Range, Content-Length, Content-Range');
       return res.redirect(302, cachedDirectUrl);
     }
 
@@ -139,13 +144,16 @@ function createEmbyMiddleware() {
     let resolvedDirectUrl = null;
     let accelerationModeUsed = 'NONE';
 
-    // 优先：若 Emby 媒体路径本身为 P115StrmHelper / HTTP 302 节点直链，直接高速解析出 115 官方 CDN 真实直链
+    // 优先：若 Emby 媒体路径本身为 P115StrmHelper / HTTP 302 节点直链，直接按客户端真实 UA 高速解析出 115 官方 CDN 真实直链
     if (mediaMetadata && mediaMetadata.filePath && (mediaMetadata.filePath.startsWith('http://') || mediaMetadata.filePath.startsWith('https://'))) {
       try {
+        const helperHeaders = {};
+        if (clientUa) helperHeaders['User-Agent'] = clientUa;
         const res = await axios.get(mediaMetadata.filePath, {
+          headers: helperHeaders,
           maxRedirects: 0,
           validateStatus: s => s >= 200 && s < 400,
-          timeout: 4000,
+          timeout: 5000,
           httpsAgent
         });
         if (res.status >= 300 && res.status < 400 && res.headers.location) {
@@ -166,7 +174,7 @@ function createEmbyMiddleware() {
     if (!resolvedDirectUrl && userCookie) {
       console.log(`🔍 [Step 1 用户盘] 检索用户 ${currentUserName} 的 115 资源: ${targetPickcode ? `Pickcode=${targetPickcode}` : `名称="${mediaMetadata ? mediaMetadata.filename : itemId}"`}`);
       if (targetPickcode) {
-        const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
+        const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '', clientUa);
         if (linkRes.success) {
           resolvedDirectUrl = linkRes.downloadUrl;
           accelerationModeUsed = 'STEP1_OWN';
@@ -179,7 +187,7 @@ function createEmbyMiddleware() {
         const searchRes = await openApi115.searchUserDrive(userCookie, searchTarget);
         if (searchRes.found && searchRes.pickcode) {
           console.log(`🎯 [Step 1 搜索命中] 在用户网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
-          const linkRes = await openApi115.getDirectLink(userCookie, searchRes.pickcode, searchRes.fileId);
+          const linkRes = await openApi115.getDirectLink(userCookie, searchRes.pickcode, searchRes.fileId, clientUa);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP1_OWN';
@@ -217,7 +225,7 @@ function createEmbyMiddleware() {
           targetCid
         );
         if (transferRes.success && transferRes.pickcode) {
-          const linkRes = await openApi115.getDirectLink(userCookie, transferRes.pickcode, transferRes.fileId);
+          const linkRes = await openApi115.getDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP2_PEER';
@@ -236,7 +244,7 @@ function createEmbyMiddleware() {
         dbService.updateCookieUsed(sourceCookieObj.id);
 
         if (targetPickcode) {
-          const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
+          const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, targetPickcode, fileInfo ? fileInfo.file_id : '', clientUa);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP3_SOURCE';
@@ -247,7 +255,7 @@ function createEmbyMiddleware() {
           const searchRes = await openApi115.searchUserDrive(sourceCookieObj.cookie, searchTarget);
           if (searchRes.found && searchRes.pickcode) {
             console.log(`🎯 [Step 3 搜索命中] 在源网盘匹配到文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
-            const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, searchRes.pickcode, searchRes.fileId);
+            const linkRes = await openApi115.getDirectLink(sourceCookieObj.cookie, searchRes.pickcode, searchRes.fileId, clientUa);
             if (linkRes.success) {
               resolvedDirectUrl = linkRes.downloadUrl;
               accelerationModeUsed = 'STEP3_SOURCE';
@@ -303,7 +311,11 @@ function createEmbyMiddleware() {
       if (fileInfo) dbService.updateFilePlayback(fileInfo.sha1);
       dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
 
-      // 返回标准 HTTP 302 Found 重定向
+      // 返回标准 HTTP 302 Found 重定向，附带全套 CORS 头部保障各端播放器顺畅跟随
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Location, Range, Content-Length, Content-Range');
       return res.redirect(302, resolvedDirectUrl);
     }
 
@@ -322,6 +334,18 @@ function createEmbyMiddleware() {
 
     if (token && resolvedUserId) {
       tokenToUserMap.set(token, resolvedUserId);
+    }
+    next();
+  });
+
+  // 跨域 OPTIONS 预检请求快速放行
+  router.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Max-Age', '86400');
+      return res.sendStatus(204);
     }
     next();
   });

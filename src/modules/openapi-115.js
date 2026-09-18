@@ -137,16 +137,21 @@ class OpenApi115 {
   /**
    * 4. 获取下载直链
    */
-  async getDirectLink(cookie, pickcode, fileId = '') {
+  async getDirectLink(cookie, pickcode, fileId = '', clientUserAgent = '') {
     if (!pickcode) return { success: false, error: '缺少 pickcode' };
 
-    // 1. 优先通过系统直链服务节点解析（绕过 115 客户端私有 RSA 签名限制）
+    // 1. 优先通过系统直链服务节点解析（按客户端真实 User-Agent 动态签名，彻底避免 115 CDN invalid signature 403 拒收）
     try {
       const helperUrl = `http://158.101.5.12:65041/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=${pickcode}`;
+      const reqHeaders = {};
+      if (clientUserAgent) {
+        reqHeaders['User-Agent'] = clientUserAgent;
+      }
       const res = await this.http.get(helperUrl, {
+        headers: reqHeaders,
         maxRedirects: 0,
         validateStatus: s => s >= 200 && s < 400,
-        timeout: 4000
+        timeout: 5000
       });
       if (res.status >= 300 && res.status < 400 && res.headers.location) {
         return {
@@ -174,7 +179,7 @@ class OpenApi115 {
         headers: {
           Cookie: cookie,
           Referer: 'https://115.com/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          'User-Agent': clientUserAgent || USER_AGENT
         },
         timeout: 4000
       });
