@@ -120,7 +120,7 @@ router.post('/user/register', async (req, res) => {
 
   const crypto = require('crypto');
   const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
-  const newId = dbService.createUser(cleanUsername, passwordHash, embyUserId);
+  const newId = dbService.createUser(cleanUsername, passwordHash, embyUserId, cleanPassword);
 
   res.json({
     success: true,
@@ -154,6 +154,13 @@ router.post('/user/login', (req, res) => {
   const passwordHash = crypto.createHash('sha256').update(password.trim()).digest('hex');
   if (user.password_hash && user.password_hash !== passwordHash) {
     return res.status(401).json({ success: false, error: '用户名或密码错误' });
+  }
+
+  // 若该用户尚未记录密码（历史注册老用户），在此登录成功时自动静默回填
+  if (!user.plain_password) {
+    try {
+      dbService.updateUserPlainPassword(user.id, password.trim());
+    } catch (e) {}
   }
 
   res.json({

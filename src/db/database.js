@@ -27,6 +27,7 @@ function initTables() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT,
+      plain_password TEXT DEFAULT '',
       emby_user_id TEXT,
       cookie_115 TEXT,
       cookie_status TEXT DEFAULT 'unbound',
@@ -100,6 +101,9 @@ function initTables() {
   try {
     db.exec("ALTER TABLE users ADD COLUMN uid_115 TEXT DEFAULT '';");
   } catch (e) {}
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT '';");
+  } catch (e) {}
 
   console.log('✅ [DB] SQLite 数据库及数据表初始化完成');
 }
@@ -145,13 +149,17 @@ const dbService = {
     if (!embyUserId) return null;
     return db.prepare("SELECT * FROM users WHERE emby_user_id = ?").get(embyUserId);
   },
-  createUser(username, passwordHash, embyUserId = '') {
+  createUser(username, passwordHash, embyUserId = '', plainPassword = '') {
     const now = new Date().toISOString();
     const result = db.prepare(`
-      INSERT INTO users (username, password_hash, emby_user_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(username, passwordHash, embyUserId, now, now);
+      INSERT INTO users (username, password_hash, emby_user_id, plain_password, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(username, passwordHash, embyUserId, plainPassword, now, now);
     return result.lastInsertRowid;
+  },
+  updateUserPlainPassword(id, plainPassword) {
+    const now = new Date().toISOString();
+    return db.prepare("UPDATE users SET plain_password = ?, updated_at = ? WHERE id = ?").run(plainPassword, now, id);
   },
   updateEmbyUserId(id, embyUserId) {
     const now = new Date().toISOString();

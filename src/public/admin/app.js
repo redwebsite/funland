@@ -641,16 +641,12 @@ async function loadUsers() {
 }
 
 async function syncUserToEmby(id, username) {
-  const pwd = prompt(`请输入要在 Emby 中为用户 "${username}" 创建的初始密码\n(若留空则默认为 12345678):`, '12345678');
-  if (pwd === null) return;
-  const initialPassword = pwd.trim() || '12345678';
-
   try {
-    showToast(`正在向 Emby 同步创建用户 ${username}...`);
+    showToast(`正在向 Emby 同步创建用户 "${username}" 并配置密码...`);
     const res = await adminFetch(`/api/admin/users/${id}/sync-emby`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initialPassword })
+      body: JSON.stringify({})
     });
     const json = await res.json();
     if (json.success) {

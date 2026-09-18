@@ -329,7 +329,7 @@ router.get('/emby-users', async (req, res) => {
   }
 });
 
-// 16. 手动补同步已有用户至 Emby
+// 16. 手动补同步已有用户至 Emby (直接提取用户注册时设置的密码)
 router.post('/users/:id/sync-emby', async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
@@ -342,18 +342,19 @@ router.post('/users/:id/sync-emby', async (req, res) => {
   }
 
   const { initialPassword } = req.body || {};
+  const syncPassword = user.plain_password || initialPassword || '12345678';
   const templateUserId = dbService.getSetting('emby_template_user_id', '');
 
   try {
     const embyResult = await embyApi.createEmbyUser(
       user.username,
-      initialPassword || '12345678',
+      syncPassword,
       templateUserId
     );
     dbService.updateEmbyUserId(id, embyResult.embyUserId);
     res.json({
       success: true,
-      msg: `已成功在 Emby 创建用户 "${user.username}" 并完成模板权限克隆！初始密码: ${initialPassword || '12345678'}`,
+      msg: `已成功在 Emby 创建用户 "${user.username}" 并同步注册密码及模板权限！`,
       embyUserId: embyResult.embyUserId
     });
   } catch (e) {
