@@ -120,6 +120,9 @@ function createEmbyMiddleware() {
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Location, Range, Content-Length, Content-Range');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       return res.redirect(302, cachedDirectUrl);
     }
 
@@ -311,11 +314,14 @@ function createEmbyMiddleware() {
       if (fileInfo) dbService.updateFilePlayback(fileInfo.sha1);
       dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
 
-      // 返回标准 HTTP 302 Found 重定向，附带全套 CORS 头部保障各端播放器顺畅跟随
+      // 返回标准 HTTP 302 Found 重定向，附带全套 CORS 头部与防缓存头部保障各端播放器顺畅跟随
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Location, Range, Content-Length, Content-Range');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
       return res.redirect(302, resolvedDirectUrl);
     }
 
@@ -364,6 +370,44 @@ function createEmbyMiddleware() {
       return handleStreamInterception(req, res, next);
     }
     next();
+  });
+
+  // 核心优化：针对 Sessions/Playing/Stopped 等会话报告接口实行 Fast-Ack 闪电响应 (204 No Content)
+  // 背景：Forward、Rex、Infuse 等移动端/iPad 架构播放器在停止播放时会向服务端上报 Stopped，
+  // 并在本地线程通过 SQLite (如 WCDB) 写入播放记录。若上游 Emby 处于海外或网络高延迟（800ms+），
+  // 客户端等待响应期间若用户将窗口置于后台或切换应用，macOS RunningBoard 守护进程会因检测到后台挂起进程持有 SQLite 锁而强制 SIGKILL (0xdead10cc)。
+  // Funland 在 <1ms 内秒回 204 解除客户端死等，让其瞬间释放本地事务与数据库锁；同时在后台异步静默透传给上游 Emby，确保服务端进度同步记录！
+  const SESSION_FAST_ACK_REGEX = /^(?:\/emby)?\/sessions\/playing\/(stopped|progress|ping)$/i;
+
+  router.post(SESSION_FAST_ACK_REGEX, express.raw({ type: '*/*' }), (req, res) => {
+    // 1. 立即返回 204 No Content
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.status(204).end();
+
+    // 2. 后台异步转发至真实上游 Emby 服务器
+    const base = upstreamUrl().replace(/\/+$/, '');
+    let reqPath = req.originalUrl || req.url;
+    if (!reqPath.startsWith('/emby') && !base.endsWith('/emby')) {
+      reqPath = '/emby' + (reqPath.startsWith('/') ? reqPath : '/' + reqPath);
+    }
+    const targetUrl = `${base}${reqPath}`;
+
+    const forwardHeaders = { ...req.headers };
+    delete forwardHeaders.host;
+    delete forwardHeaders['content-length'];
+
+    axios({
+      method: 'POST',
+      url: targetUrl,
+      data: req.body && req.body.length > 0 ? req.body : undefined,
+      headers: forwardHeaders,
+      timeout: 8000,
+      httpsAgent
+    }).catch(err => {
+      console.warn(`[Emby Proxy] 后台异步同步 ${req.path} 失败: ${err.message}`);
+    });
   });
 
   // 透明代理所有其他 Emby 请求（元数据、列表、海报、登录认证、系统接口）
