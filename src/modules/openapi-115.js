@@ -138,17 +138,48 @@ class OpenApi115 {
    * 4. 获取下载直链
    */
   async getDirectLink(cookie, pickcode, fileId = '') {
+    if (!pickcode) return { success: false, error: '缺少 pickcode' };
+
+    // 1. 优先通过系统直链服务节点解析（绕过 115 客户端私有 RSA 签名限制）
+    try {
+      const helperUrl = `http://158.101.5.12:65041/api/v1/plugin/P115StrmHelper/redirect_url?pickcode=${pickcode}`;
+      const res = await this.http.get(helperUrl, {
+        maxRedirects: 0,
+        validateStatus: s => s >= 200 && s < 400,
+        timeout: 4000
+      });
+      if (res.status >= 300 && res.status < 400 && res.headers.location) {
+        return {
+          success: true,
+          downloadUrl: res.headers.location,
+          fileId: fileId || pickcode,
+          pickcode
+        };
+      }
+    } catch (e) {
+      if (e.response && e.response.headers && e.response.headers.location) {
+        return {
+          success: true,
+          downloadUrl: e.response.headers.location,
+          fileId: fileId || pickcode,
+          pickcode
+        };
+      }
+    }
+
+    // 2. 备用通过 115 官方 Chrome 接口尝试提取
     try {
       const url = `https://proapi.115.com/app/chrome/downurl?pickcode=${pickcode}`;
       const res = await this.http.get(url, {
         headers: {
           Cookie: cookie,
-          Referer: 'https://115.com/'
-        }
+          Referer: 'https://115.com/',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        },
+        timeout: 4000
       });
 
       if (res.data && res.data.state && res.data.data) {
-        // 115 结构为 data: { [fileId]: { url: { url: "http://..." } } }
         const fileObj = fileId ? res.data.data[fileId] : Object.values(res.data.data)[0];
         if (fileObj && fileObj.url && fileObj.url.url) {
           return {

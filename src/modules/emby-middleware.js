@@ -139,8 +139,31 @@ function createEmbyMiddleware() {
     let resolvedDirectUrl = null;
     let accelerationModeUsed = 'NONE';
 
+    // 优先：若 Emby 媒体路径本身为 P115StrmHelper / HTTP 302 节点直链，直接高速解析出 115 官方 CDN 真实直链
+    if (mediaMetadata && mediaMetadata.filePath && (mediaMetadata.filePath.startsWith('http://') || mediaMetadata.filePath.startsWith('https://'))) {
+      try {
+        const res = await axios.get(mediaMetadata.filePath, {
+          maxRedirects: 0,
+          validateStatus: s => s >= 200 && s < 400,
+          timeout: 4000,
+          httpsAgent
+        });
+        if (res.status >= 300 && res.status < 400 && res.headers.location) {
+          resolvedDirectUrl = res.headers.location;
+          accelerationModeUsed = userCookie ? 'STEP1_OWN' : 'STEP3_SOURCE';
+          console.log(`✅ [${accelerationModeUsed === 'STEP1_OWN' ? 'Step 1' : 'Step 3'} 命中] 直链节点解析成功，获得 115 官方 CDN 链接: ${resolvedDirectUrl.substring(0, 60)}...`);
+        }
+      } catch (e) {
+        if (e.response && e.response.headers && e.response.headers.location) {
+          resolvedDirectUrl = e.response.headers.location;
+          accelerationModeUsed = userCookie ? 'STEP1_OWN' : 'STEP3_SOURCE';
+          console.log(`✅ [${accelerationModeUsed === 'STEP1_OWN' ? 'Step 1' : 'Step 3'} 命中] 直链节点解析成功，获得 115 官方 CDN 链接: ${resolvedDirectUrl.substring(0, 60)}...`);
+        }
+      }
+    }
+
     // --- STEP 1: 用户自有网盘匹配 (50ms) ---
-    if (userCookie) {
+    if (!resolvedDirectUrl && userCookie) {
       console.log(`🔍 [Step 1 用户盘] 检索用户 ${currentUserName} 的 115 资源: ${targetPickcode ? `Pickcode=${targetPickcode}` : `名称="${mediaMetadata ? mediaMetadata.filename : itemId}"`}`);
       if (targetPickcode) {
         const linkRes = await openApi115.getDirectLink(userCookie, targetPickcode, fileInfo ? fileInfo.file_id : '');
@@ -160,7 +183,6 @@ function createEmbyMiddleware() {
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             accelerationModeUsed = 'STEP1_OWN';
-            // 写入本地文件索引
             dbService.recordFileIndex(
               searchRes.sha1 || `SHA1_${Date.now()}`,
               searchRes.filename,
@@ -177,7 +199,7 @@ function createEmbyMiddleware() {
           console.log(`ℹ️ [Step 1 未命中] 用户网盘未检索到匹配文件: "${searchTarget}"`);
         }
       }
-    } else {
+    } else if (!userCookie && !resolvedDirectUrl) {
       console.log(`ℹ️ [Step 1 跳过] 用户 ${currentUserName} 尚未绑定有效 115 Cookie`);
     }
 
@@ -249,6 +271,31 @@ function createEmbyMiddleware() {
       console.log(`🚀 [302 Found] 成功获取直链，重定向客户端至 CDN: ${resolvedDirectUrl.substring(0, 60)}...`);
       // 存入滑动过期缓存 (默认 1800 秒 / 30 分钟)
       cacheScheduler.set(cacheKey, resolvedDirectUrl, config.cache.ttlSeconds);
+
+      // 从 115 官方 CDN 链接中提取 SHA1 与文件名进行指纹沉淀与秒传同步
+      try {
+        const sha1Match = resolvedDirectUrl.match(/115cdn\.net\/([a-f0-9]{40})\//i);
+        const sha1 = sha1Match ? sha1Match[1] : '';
+        const urlSegments = resolvedDirectUrl.split('?')[0].split('/');
+        const encodedName = urlSegments[urlSegments.length - 1];
+        const realFilename = encodedName ? decodeURIComponent(encodedName) : (mediaMetadata ? mediaMetadata.name : 'Media');
+        const realSize = mediaMetadata ? (mediaMetadata.size || 0) : 0;
+
+        if (sha1) {
+          dbService.recordFileIndex(sha1, realFilename, realSize, targetPickcode, '', itemId);
+          if (currentUser) dbService.recordFileUser(sha1, currentUser.id);
+
+          // 若当前用户已绑定 115 且为 Step 1，自动在后台秒传留存至用户网盘
+          if (userCookie && accelerationModeUsed === 'STEP1_OWN') {
+            openApi115.fastTransfer(userCookie, sha1, realSize, realFilename).then(res => {
+              if (res && res.success) {
+                console.log(`💾 [自动秒传] 视频 "${realFilename}" 已自动转存至用户 ${currentUserName} 的 115 网盘`);
+              }
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {}
+
       // 记录播放历史与热度
       if (fileInfo) dbService.updateFilePlayback(fileInfo.sha1);
       dbService.logPlayback(itemId, mediaMetadata ? mediaMetadata.name : 'Media Stream', currentUserName, clientIp, accelerationModeUsed, resolvedDirectUrl);
