@@ -7,8 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.5.0/fonts/remixicon.css" rel="stylesheet">
   <link rel="icon" type="image/jpeg" href="images/logo.jpg">
-  <link rel="stylesheet" href="style.css?v=2.0.2">
+  <link rel="stylesheet" href="style.css?v=2.1.0">
 </head>
 <body>
   <!-- 侧边导航栏 -->
@@ -23,31 +24,31 @@
 
     <nav class="nav-menu">
       <div class="nav-item active" data-tab="dashboard" onclick="switchTab('dashboard')">
-        <span class="nav-icon">📊</span>
+        <i class="ri-dashboard-3-line nav-icon"></i>
         <span>系统总览</span>
       </div>
       <div class="nav-item" data-tab="emby" onclick="switchTab('emby')">
-        <span class="nav-icon">⚙️</span>
+        <i class="ri-settings-3-line nav-icon"></i>
         <span>Emby 服务设置</span>
       </div>
       <div class="nav-item" data-tab="cookie-pool" onclick="switchTab('cookie-pool')">
-        <span class="nav-icon">🍪</span>
+        <i class="ri-database-2-line nav-icon"></i>
         <span>115 账号资源池</span>
       </div>
       <div class="nav-item" data-tab="cache" onclick="switchTab('cache')">
-        <span class="nav-icon">⚡</span>
+        <i class="ri-flashlight-line nav-icon"></i>
         <span>滑动过期缓存</span>
       </div>
       <div class="nav-item" data-tab="files" onclick="switchTab('files')">
-        <span class="nav-icon">📁</span>
+        <i class="ri-hard-drive-3-line nav-icon"></i>
         <span>文件与 SHA1 库</span>
       </div>
       <div class="nav-item" data-tab="users" onclick="switchTab('users')">
-        <span class="nav-icon">👥</span>
+        <i class="ri-group-line nav-icon"></i>
         <span>用户管理与配额</span>
       </div>
       <div class="nav-item" data-tab="logs" onclick="switchTab('logs')">
-        <span class="nav-icon">📜</span>
+        <i class="ri-file-list-3-line nav-icon"></i>
         <span>播放拦截日志</span>
       </div>
     </nav>
@@ -56,7 +57,7 @@
       <div class="admin-profile-row">
         <div class="admin-profile-info">
           <div class="admin-avatar-wrapper">
-            <span class="admin-avatar">👤</span>
+            <i class="ri-user-line admin-avatar"></i>
             <span class="status-dot-pulse" title="已连接在线"></span>
           </div>
           <span id="currentAdminBadge" class="admin-badge-name">admin</span>
@@ -85,7 +86,7 @@
           节点: <strong id="topDomain">自动检测</strong>
         </span>
         <button class="btn btn-secondary" onclick="refreshCurrentTab()">
-          <span>🔄 刷新</span>
+          <i class="ri-refresh-line"></i> 刷新
         </button>
       </div>
     </header>
@@ -96,7 +97,7 @@
         <div class="stat-card">
           <div class="stat-header">
             <span class="stat-label">今日 302 重定向</span>
-            <div class="stat-icon-wrapper">🎬</div>
+            <div class="stat-icon-wrapper"><i class="ri-play-circle-line"></i></div>
           </div>
           <div class="stat-value" id="statTodayPlays">0</div>
           <div class="stat-footer">累计拦截: <span id="statTotalPlays">0</span> 次</div>
@@ -105,7 +106,7 @@
         <div class="stat-card">
           <div class="stat-header">
             <span class="stat-label">30分钟缓存命中率</span>
-            <div class="stat-icon-wrapper">⚡</div>
+            <div class="stat-icon-wrapper"><i class="ri-flashlight-line"></i></div>
           </div>
           <div class="stat-value" id="statHitRate">100%</div>
           <div class="stat-footer">当前活跃缓存: <span id="statActiveKeys">0</span> 个</div>
@@ -114,7 +115,7 @@
         <div class="stat-card">
           <div class="stat-header">
             <span class="stat-label">115 账号资源池</span>
-            <div class="stat-icon-wrapper">🍪</div>
+            <div class="stat-icon-wrapper"><i class="ri-server-line"></i></div>
           </div>
           <div class="stat-value" id="statPoolCount">0</div>
           <div class="stat-footer">兜底源盘与秒传节点</div>
@@ -123,7 +124,7 @@
         <div class="stat-card">
           <div class="stat-header">
             <span class="stat-label">已索引媒体文件</span>
-            <div class="stat-icon-wrapper">📁</div>
+            <div class="stat-icon-wrapper"><i class="ri-film-line"></i></div>
           </div>
           <div class="stat-value" id="statIndexedFiles">0</div>
           <div class="stat-footer">本地 SHA1 秒传指纹库</div>
@@ -133,23 +134,23 @@
       <!-- 快捷入口卡片 -->
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>🚀</span> 服务端口与拓扑架构</h2>
+          <h2 class="panel-title"><i class="ri-layout-grid-line"></i> 服务端口与拓扑架构</h2>
         </div>
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
-            <div style="font-weight: 600; color: #818cf8; margin-bottom: 6px;">🌐 用户中心 (Portal)</div>
+            <div style="font-weight: 600; color: #818cf8; margin-bottom: 6px;"><i class="ri-global-line"></i> 用户中心 (Portal)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">公开入口，供普通用户绑定 115 扫码</div>
             <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyPortal">http://localhost:8098</code>
           </div>
 
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
-            <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;">🎬 Emby 播放中间件 (Proxy)</div>
+            <div style="font-weight: 600; color: #34d399; margin-bottom: 6px;"><i class="ri-film-line"></i> Emby 播放中间件 (Proxy)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">填入客户端（Infuse/Emby）的服务器地址</div>
             <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyEmby">http://localhost:8097</code>
           </div>
 
           <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px;">
-            <div style="font-weight: 600; color: #c084fc; margin-bottom: 6px;">🛡️ 管理控制台 (Admin)</div>
+            <div style="font-weight: 600; color: #c084fc; margin-bottom: 6px;"><i class="ri-shield-check-line"></i> 管理控制台 (Admin)</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">专属后台，管理 Cookie 池与 Emby 密钥</div>
             <code style="display: block; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-size: 0.82rem;" id="topologyAdmin">http://localhost:8091</code>
           </div>
@@ -161,7 +162,7 @@
     <section id="tab-emby" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>⚙️</span> Emby 服务连接与拦截策略</h2>
+          <h2 class="panel-title"><i class="ri-settings-3-line"></i> Emby 服务连接与拦截策略</h2>
         </div>
         <form id="embySettingsForm" onsubmit="saveEmbySettings(event)">
           <div class="form-grid">
@@ -209,14 +210,14 @@
               <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">建议保持本地回源，引导新用户在门户自备 115 账号绑定</small>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存 Emby 与安全隔离配置</button>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;"><i class="ri-save-line"></i> 保存 Emby 与安全隔离配置</button>
         </form>
       </div>
 
       <!-- 联动 Emby 模式：用户同步与模板克隆 -->
       <div class="glass-panel" style="margin-top: 24px;">
         <div class="panel-header">
-          <h2 class="panel-title"><span>👥</span> 联动 Emby 模式：Emby 账号自动创建与模板克隆</h2>
+          <h2 class="panel-title"><i class="ri-link"></i> 联动 Emby 模式：Emby 账号自动创建与模板克隆</h2>
         </div>
         <form id="embySyncForm" onsubmit="saveEmbySyncSettings(event)">
           <div class="form-grid">
@@ -233,8 +234,8 @@
               <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
                 <label class="form-label" style="margin-bottom: 0;">新用户权限克隆模板 (Template User)</label>
                 <div style="display: flex; gap: 6px;">
-                  <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="fetchEmbyUsersList()">🔄 刷新列表</button>
-                  <button type="button" class="btn btn-primary" style="padding: 2px 10px; font-size: 0.75rem; background: var(--color-primary);" onclick="syncAllEmbyUsers()">📥 一键同步 Emby 用户到本地</button>
+                  <button type="button" class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem;" onclick="fetchEmbyUsersList()"><i class="ri-refresh-line"></i> 刷新列表</button>
+                  <button type="button" class="btn btn-primary" style="padding: 2px 10px; font-size: 0.75rem; background: var(--color-primary);" onclick="syncAllEmbyUsers()"><i class="ri-download-cloud-line"></i> 一键同步 Emby 用户到本地</button>
                 </div>
               </div>
               <select class="form-select" id="cfgEmbyTemplateUser" style="margin-top: 6px;">
@@ -243,7 +244,7 @@
               <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">开启联动后，新注册用户将完整继承该模板用户的媒体库可见范围及转码策略（系统会自动强制禁用其管理员权限）</small>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存模板与同步策略</button>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;"><i class="ri-save-line"></i> 保存模板与同步策略</button>
         </form>
       </div>
     </section>
@@ -255,21 +256,21 @@
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <div>
             <h3 style="margin: 0 0 6px 0; font-size: 1.05rem; color: #fff; display: flex; align-items: center; gap: 8px;">
-              <span>🛡️</span> 大号零流量物理隔离机制已激活
+              <i class="ri-shield-check-fill" style="color: #10b981;"></i> 大号零流量物理隔离机制已激活
             </h3>
             <p style="margin: 0; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;">
               小号播放时 <strong>100% 仅由小号自身 Cookie</strong> 直接请求 115 CDN（UID归属小号），源网盘仅在小号缺少资源时执行秒传复制，绝不直接将大号 CDN 直链给小号，彻底避免大号封禁。
             </p>
           </div>
           <button type="button" class="btn btn-primary" onclick="openAdminQrModal()" style="white-space: nowrap; padding: 10px 18px; font-weight: 700;">
-            📱 手机扫码添加源网盘
+            <i class="ri-qr-code-line"></i> 手机扫码添加源网盘
           </button>
         </div>
       </div>
 
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>🍪</span> 手动添加 115 账号至资源池 (源盘 / 公共转存)</h2>
+          <h2 class="panel-title"><i class="ri-add-circle-line"></i> 手动添加 115 账号至资源池 (源盘 / 公共转存)</h2>
         </div>
         <form id="addPoolForm" onsubmit="addCookieToPool(event)">
           <div class="form-grid">
@@ -282,13 +283,13 @@
               <input type="text" class="form-input" id="poolCookie" placeholder="UID=...; CID=...; SEID=..." required>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary">➕ 校验并添加至资源池</button>
+          <button type="submit" class="btn btn-primary"><i class="ri-check-double-line"></i> 校验并添加至资源池</button>
         </form>
       </div>
 
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>📋</span> 已激活的 115 账号列表</h2>
+          <h2 class="panel-title"><i class="ri-list-check"></i> 已激活的 115 账号列表</h2>
         </div>
         <div class="data-table-container">
           <table class="data-table">
@@ -314,8 +315,8 @@
     <section id="tab-cache" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>⚡</span> 30分钟滑动过期缓存状态</h2>
-          <button class="btn btn-danger" onclick="flushCache()">🗑️ 清空所有缓存</button>
+          <h2 class="panel-title"><i class="ri-flashlight-line"></i> 30分钟滑动过期缓存状态</h2>
+          <button class="btn btn-danger" onclick="flushCache()"><i class="ri-delete-bin-line"></i> 清空所有缓存</button>
         </div>
         <div class="data-table-container">
           <table class="data-table">
@@ -339,7 +340,7 @@
     <section id="tab-files" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>📁</span> 本地媒体 SHA1 秒传指纹库</h2>
+          <h2 class="panel-title"><i class="ri-hard-drive-3-line"></i> 本地媒体 SHA1 秒传指纹库</h2>
         </div>
         <div class="data-table-container">
           <table class="data-table">
@@ -364,7 +365,7 @@
     <section id="tab-users" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>👥</span> 新用户注册开关与容量配额</h2>
+          <h2 class="panel-title"><i class="ri-user-settings-line"></i> 新用户注册开关与容量配额</h2>
         </div>
         <form id="regSettingsForm" onsubmit="saveRegSettings(event)">
           <div class="form-grid">
@@ -383,14 +384,14 @@
               <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">默认 200 人。达到该人数后系统将自动锁死注册入口并提示名额已满</small>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="margin-top: 10px;">💾 保存注册与配额策略</button>
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px;"><i class="ri-save-line"></i> 保存注册与配额策略</button>
         </form>
       </div>
 
       <!-- 配额使用进度卡片 -->
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>📊</span> 当前用户容量占用率</h2>
+          <h2 class="panel-title"><i class="ri-pie-chart-line"></i> 当前用户容量占用率</h2>
           <span id="userQuotaText" style="font-size: 0.9rem; font-weight: 600; color: #38bdf8;">0 / 200 (0%)</span>
         </div>
         <div style="background: rgba(255,255,255,0.05); border-radius: 9999px; height: 12px; overflow: hidden; width: 100%;">
@@ -401,10 +402,10 @@
       <!-- 用户列表卡片 -->
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>📋</span> 已注册用户列表</h2>
+          <h2 class="panel-title"><i class="ri-group-line"></i> 已注册用户列表</h2>
           <div style="display: flex; gap: 8px;">
-            <button class="btn btn-primary" style="background: var(--color-primary);" onclick="syncAllEmbyUsers()">📥 从 Emby 导入全部用户</button>
-            <button class="btn btn-secondary" onclick="loadUsers()">🔄 刷新用户</button>
+            <button class="btn btn-primary" style="background: var(--color-primary);" onclick="syncAllEmbyUsers()"><i class="ri-download-cloud-line"></i> 从 Emby 导入全部用户</button>
+            <button class="btn btn-secondary" onclick="loadUsers()"><i class="ri-refresh-line"></i> 刷新用户</button>
           </div>
         </div>
         <div class="data-table-container">
@@ -432,8 +433,8 @@
     <section id="tab-logs" class="tab-section">
       <div class="glass-panel">
         <div class="panel-header">
-          <h2 class="panel-title"><span>📜</span> 实时播放拦截与 302 重定向日志</h2>
-          <button class="btn btn-secondary" onclick="loadLogs()">🔄 刷新日志</button>
+          <h2 class="panel-title"><i class="ri-file-list-3-line"></i> 实时播放拦截与 302 重定向日志</h2>
+          <button class="btn btn-secondary" onclick="loadLogs()"><i class="ri-refresh-line"></i> 刷新日志</button>
         </div>
         <div class="data-table-container">
           <table class="data-table">
@@ -476,7 +477,7 @@
         </div>
         <div id="loginErrorAlert" style="display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 0.82rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); color: #f87171;"></div>
         <button type="submit" id="btnAdminLogin" class="btn btn-primary" style="width: 100%; padding: 12px; justify-content: center; font-size: 0.95rem; font-weight: 700; border-radius: 10px;">
-          ⚡ 验证身份并进入
+          <i class="ri-lock-unlock-line"></i> 验证身份并进入
         </button>
       </form>
     </div>
@@ -485,15 +486,15 @@
   <!-- 扫码添加源网盘弹窗 -->
   <div id="adminQrModal" class="admin-login-overlay" style="display: none;">
     <div class="admin-login-card" style="max-width: 380px; text-align: center;">
-      <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;">📱 扫码添加源网盘至资源池</h3>
+      <h3 style="margin-top: 0; font-size: 1.15rem; color: #fff;"><i class="ri-qr-code-line"></i> 扫码添加源网盘至资源池</h3>
       <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 16px;">请使用 115 手机端 App 扫码确认登录，系统将自动录入源盘 Cookie 供全站小号秒传使用</p>
       <div style="background: #fff; padding: 12px; border-radius: 12px; display: inline-block; margin-bottom: 12px;">
         <img id="adminQrImg" src="" style="width: 200px; height: 200px; display: block;" alt="二维码">
       </div>
       <div id="adminQrStatus" style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 16px; font-weight: 500;">⏳ 正在初始化扫码会话...</div>
       <div style="display: flex; gap: 10px;">
-        <button class="btn btn-secondary" style="flex: 1;" onclick="refreshAdminQr()">🔄 刷新</button>
-        <button class="btn btn-danger" style="flex: 1;" onclick="closeAdminQrModal()">关闭</button>
+        <button class="btn btn-secondary" style="flex: 1;" onclick="refreshAdminQr()"><i class="ri-refresh-line"></i> 刷新</button>
+        <button class="btn btn-danger" style="flex: 1;" onclick="closeAdminQrModal()"><i class="ri-close-line"></i> 关闭</button>
       </div>
     </div>
   </div>
