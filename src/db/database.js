@@ -353,7 +353,7 @@ const dbService = {
     `).run(now, sha1);
   },
   getAllIndexedFiles(limit = 100) {
-    return db.prepare("SELECT * FROM files ORDER BY last_played_at DESC, created_at DESC LIMIT ?").all(limit);
+    return db.prepare("SELECT * FROM files ORDER BY COALESCE(last_played_at, created_at) DESC, created_at DESC LIMIT ?").all(limit);
   },
 
   // 播放日志

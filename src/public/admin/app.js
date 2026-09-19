@@ -2,17 +2,24 @@
 
 let currentTab = 'dashboard';
 
-// 通用管理员接口请求封装 (自动携带 Bearer Token 与 401 拦截)
+// 通用管理员接口请求封装 (自动携带 Bearer Token、防 304 缓存机制与 401 拦截)
 async function adminFetch(url, options = {}) {
   const token = localStorage.getItem('funland_admin_token') || '';
   const headers = Object.assign({}, options.headers || {});
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  headers['Cache-Control'] = 'no-cache, no-store';
+  headers['Pragma'] = 'no-cache';
   options.headers = headers;
+  options.cache = 'no-store';
+
+  // 拼接随机时间戳避免任何浏览器与中间代理 GET 缓存
+  const separator = url.includes('?') ? '&' : '?';
+  const targetUrl = options.method && options.method.toUpperCase() !== 'GET' ? url : `${url}${separator}_t=${Date.now()}`;
 
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(targetUrl, options);
     if (res.status === 401) {
       localStorage.removeItem('funland_admin_token');
       showLoginOverlay('管理员认证已过期或未授权，请重新登录');

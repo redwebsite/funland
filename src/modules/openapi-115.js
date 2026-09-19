@@ -311,14 +311,22 @@ class OpenApi115 {
 
       // 2. 小号接收转存至其指定的秒存目录
       const cleanCid = String(targetCid || '0');
+      const uidMatch = receiverCookie.match(/(?:^|;\s*)UID=([^;]+)/i);
+      const receiverUid = uidMatch ? uidMatch[1] : '';
+
+      const postParams = new URLSearchParams({
+        share_code: shareCode,
+        receive_code: receiveCode,
+        cid: cleanCid,
+        file_id: String(fileId)
+      });
+      if (receiverUid) {
+        postParams.append('user_id', receiverUid);
+      }
+
       const receiveRes = await this.http.post(
         'https://webapi.115.com/share/receive',
-        new URLSearchParams({
-          share_code: shareCode,
-          receive_code: receiveCode,
-          cid: cleanCid,
-          file_id: String(fileId)
-        }).toString(),
+        postParams.toString(),
         {
           headers: {
             Cookie: receiverCookie,
@@ -415,13 +423,13 @@ class OpenApi115 {
   }
 
   /**
-   * 6. 在指定用户的网盘中根据关键词或文件名智能查询文件 (严格关键词过滤，杜绝张冠李戴)
+   * 6. 在指定用户的网盘中根据关键词、文件名或 pickcode 智能查询文件 (严格关键词过滤，杜绝张冠李戴)
    */
-  async searchUserDrive(cookie, query) {
+  async searchUserDrive(cookie, query, targetEpisode = null) {
     if (!cookie || !query) return { found: false };
 
-    // 过滤异常查询：若为 redirect_url 或仅有 pickcode 参数，不执行网盘搜索
-    if (query.includes('redirect_url') || query.includes('pickcode=') || query.startsWith('http')) {
+    // 过滤异常查询：若为 redirect_url 或带有明显 URL 协议参数，不执行网盘搜索
+    if (query.includes('redirect_url') || query.startsWith('http')) {
       return { found: false };
     }
 
@@ -433,52 +441,90 @@ class OpenApi115 {
       .replace(/[:：_\-\[\]\(\)]+/g, ' ')
       .trim();
 
+    // 提取剧集集数 (例如 S01E02, E02, 第2集, EP02)
+    const extractEpisode = s => {
+      if (!s) return null;
+      const m = s.match(/(?:s\d+)?e(\d+)/i) || s.match(/(?:ep|第)\s*(\d+)\s*(?:集)?/i);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    const queryEp = targetEpisode !== null ? targetEpisode : extractEpisode(query);
+
     const candidateQueries = [];
-    if (cleanQuery && cleanQuery.length >= 2) candidateQueries.push(cleanQuery);
+    const trimmedQuery = query.trim();
+
+    // 1. 若 query 本身是 pickcode (15-20位字母数字组合)，直接作为首选搜索
+    if (/^[a-z0-9]{15,20}$/i.test(trimmedQuery)) {
+      candidateQueries.push(trimmedQuery);
+    }
+
+    // 2. 纯净清洗标题与主标题
     const mainTitle = cleanQuery.split(/\s+/)[0];
+    if (cleanQuery && cleanQuery.length >= 2 && !candidateQueries.includes(cleanQuery)) {
+      candidateQueries.push(cleanQuery);
+    }
     if (mainTitle && mainTitle.length >= 2 && !candidateQueries.includes(mainTitle)) {
       candidateQueries.push(mainTitle);
     }
-    if (query !== cleanQuery && !candidateQueries.includes(query)) {
-      candidateQueries.push(query);
+    if (trimmedQuery !== cleanQuery && !candidateQueries.includes(trimmedQuery)) {
+      candidateQueries.push(trimmedQuery);
     }
 
-    // 校验候选文件名是否真实命中目标标题（防止 115 模糊检索出毫无关联的文件）
+    // 校验候选文件名是否真实命中目标标题（防止 115 模糊检索出无关文件）
     const isTargetMatch = (itemName, targetTitle) => {
       if (!itemName || !targetTitle) return false;
       const normalize = s => s.toLowerCase().replace(/[:：_\-\s\[\]\(\)\.]+/g, '');
       const itemNorm = normalize(itemName);
       const titleNorm = normalize(targetTitle);
-      return itemNorm.includes(titleNorm) || titleNorm.includes(itemNorm);
+      const titleMatch = itemNorm.includes(titleNorm) || titleNorm.includes(itemNorm);
+      if (!titleMatch) return false;
+
+      // 若原查询或文件名指定了集数，候选文件必须严格匹配该集数
+      if (queryEp !== null) {
+        const itemEp = extractEpisode(itemName);
+        if (itemEp !== null && itemEp !== queryEp) {
+          return false;
+        }
+      }
+      return true;
     };
 
     for (const q of candidateQueries) {
       try {
-        const url = `https://webapi.115.com/files/search?search_value=${encodeURIComponent(q)}&cid=0&limit=10&format=json`;
+        // 核心修复：115 官方检索 API 必须携带 aid=1，否则返回登录超时或参数错误
+        const url = `https://webapi.115.com/files/search?aid=1&cid=0&search_value=${encodeURIComponent(q)}&limit=30&format=json`;
         const res = await this.http.get(url, {
           headers: {
             Cookie: cookie,
             Referer: 'https://115.com/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': USER_AGENT
           },
-          timeout: 4000
+          timeout: 5000
         });
 
         if (res.data && res.data.state && res.data.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          // 严格匹配：候选文件必须包含当前搜索核心标题或原始主标题，避免无关文件干扰
+          // 严格匹配目标项目
           const matchedItem = res.data.data.find(item => {
-            if (!item.pc) return false;
-            return isTargetMatch(item.n, mainTitle || cleanQuery);
+            const pc = item.pc || item.pick_code || item.pickcode;
+            if (!pc) return false;
+            const name = item.n || item.file_name || '';
+            // 若直接搜 pickcode 命中
+            if (pc === q) return true;
+            return isTargetMatch(name, mainTitle || cleanQuery);
           });
 
-          if (matchedItem && matchedItem.pc) {
+          if (matchedItem) {
+            const fid = matchedItem.fid || matchedItem.file_id;
+            const pc = matchedItem.pc || matchedItem.pick_code || matchedItem.pickcode;
+            const name = matchedItem.n || matchedItem.file_name;
+            const size = matchedItem.s || matchedItem.file_size || 0;
+            const sha1 = matchedItem.sha1 || matchedItem.sha || '';
             return {
               found: true,
-              pickcode: matchedItem.pc,
-              fileId: matchedItem.fid,
-              filename: matchedItem.n,
-              filesize: matchedItem.s,
-              sha1: matchedItem.sha1 || matchedItem.sha
+              pickcode: pc,
+              fileId: String(fid),
+              filename: name,
+              filesize: size,
+              sha1
             };
           }
         }
@@ -529,6 +575,12 @@ class OpenApi115 {
           }
         }
       } catch (e) {}
+
+      // 1.2 若 downurl 未直接生效，在指定账号网盘中直接搜索该 pickcode
+      const pcSearch = await this.searchUserDrive(cookie, pickcode);
+      if (pcSearch.found && pcSearch.fileId) {
+        return pcSearch;
+      }
     }
 
     // 2. 若 pickcode 未直接命中，通过有效文件名在指定账号网盘中精确搜索匹配真实 file_id

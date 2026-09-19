@@ -173,6 +173,12 @@ function createEmbyMiddleware() {
       } catch (e) {}
     }
 
+    // 即刻入库已识别的媒体文件（无论 probe 结果如何，确保在文件与 SHA1 库及统计中实时可见）
+    if (sourceFilename && !sourceFilename.includes('redirect_url')) {
+      const indexSha1 = sourceSha1 || (sourcePickcode ? `SHA1_${sourcePickcode}` : `ITEM_${itemId}`);
+      dbService.recordFileIndex(indexSha1, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
+    }
+
     let resolvedDirectUrl = null;
     let accelerationModeUsed = 'NONE';
     let resolvedUid = '';
@@ -452,6 +458,13 @@ function createEmbyMiddleware() {
     secure: false, // 允许自签名或 IP HTTPS 证书
     logger: console,
     on: {
+      proxyReq: (proxyReq, req, res) => {
+        req.on('close', () => {
+          if (!req.complete) {
+            try { proxyReq.destroy(); } catch (e) {}
+          }
+        });
+      },
       error: (err, req, res) => {
         // 客户端主动中断连接（如停止播放、关闭窗口、切换前后台），属于正常网络行为，静默处理
         if (err.code === 'ECONNRESET' || err.code === 'EPIPE' || (err.message && err.message.includes('aborted'))) {

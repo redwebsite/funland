@@ -61,6 +61,14 @@ router.get('/auth-status', (req, res) => {
   });
 });
 
+// 管理后台接口全局禁用任何缓存，杜绝 304 问题，确保数据实时刷新
+router.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // 权限拦截中间件（除 login / auth-status 外均需有效 token）
 router.use((req, res, next) => {
   const authHeader = req.headers.authorization || '';
@@ -235,13 +243,6 @@ router.get('/logs', (req, res) => {
   res.json({ success: true, data: logs });
 });
 
-// 管理后台接口禁用任何缓存，避免数据刷新不及时或 304 问题
-router.use((req, res, next) => {
-  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  next();
-});
 
 // 12. 用户列表 (实时核对上游 Emby 账号存活状态)
 router.get('/users', async (req, res) => {
