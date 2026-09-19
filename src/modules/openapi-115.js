@@ -1,7 +1,135 @@
 const axios = require('axios');
 const qrcode = require('qrcode');
+const crypto = require('node:crypto');
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+
+// ============================================================
+// 115 Chrome/App 官方协议加解密核心 (RSA + 自定义 XOR 算法，移植自 fake115)
+// ============================================================
+function modPow(base, exp, mod) {
+  let res = 1n;
+  base = base % mod;
+  while (exp > 0n) {
+    if (exp % 2n === 1n) res = (res * base) % mod;
+    base = (base * base) % mod;
+    exp = exp / 2n;
+  }
+  return res;
+}
+
+class M115Rsa {
+  constructor() {
+    this.n = BigInt('0x8686980c0f5a24c4b9d43020cd2c22703ff3f450756529058b1cf88f09b8602136477198a6e2683149659bd122c33592fdb5ad47944ad1ea4d36c6b172aad6338c3bb6ac6227502d010993ac967d1aef00f0c8e038de2e4d3bc2ec368af2e9f10a6f1eda4f7262f136420c07c331b871bf139f74f3010e3c4fe57df3afb71683');
+    this.e = BigInt('0x10001');
+  }
+  a2hex(b) {
+    return b.map(x => x.toString(16).padStart(2, '0')).join('');
+  }
+  hex2a(hex) {
+    let s = '';
+    for (let i = 0; i < hex.length; i += 2) s += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+    return s;
+  }
+  pkcs1pad2(s, n) {
+    const ba = new Array(n).fill(0);
+    let i = s.length - 1, idx = n;
+    while (i >= 0) ba[--idx] = s.charCodeAt(i--);
+    ba[--idx] = 0;
+    while (idx > 2) ba[--idx] = 0xff;
+    ba[--idx] = 2;
+    return BigInt('0x' + this.a2hex(ba));
+  }
+  pkcs1unpad2(a) {
+    let b = a.toString(16);
+    if (b.length % 2) b = '0' + b;
+    const c = this.hex2a(b);
+    let i = 1;
+    while (i < c.length && c.charCodeAt(i) !== 0) i++;
+    return c.slice(i + 1);
+  }
+  encrypt(text) {
+    const m = this.pkcs1pad2(text, 0x80);
+    const c = modPow(m, this.e, this.n);
+    return c.toString(16).padStart(0x80 * 2, '0');
+  }
+  decrypt(text) {
+    const ba = [...text].map((_, i) => text.charCodeAt(i));
+    const a = BigInt('0x' + this.a2hex(ba));
+    const c = modPow(a, this.e, this.n);
+    return this.pkcs1unpad2(c);
+  }
+}
+
+const rsa115 = new M115Rsa();
+const G_KTS = [240,229,105,174,191,220,191,138,26,69,232,190,125,166,115,184,222,143,231,196,69,218,134,196,155,100,139,20,106,180,241,170,56,1,53,158,38,105,44,134,0,107,79,165,54,52,98,166,42,150,104,24,242,74,253,189,107,151,143,77,143,137,19,183,108,142,147,237,14,13,72,62,215,47,136,216,254,254,126,134,80,149,79,209,235,131,38,52,219,102,123,156,126,157,122,129,50,234,182,51,222,58,169,89,52,102,59,170,186,129,96,72,185,213,129,156,248,108,132,119,255,84,120,38,95,190,232,30,54,159,52,128,92,69,44,155,118,213,27,143,204,195,184,245];
+const G_KEY_S = [0x29, 0x23, 0x21, 0x5E];
+const G_KEY_L = [120,6,173,76,51,134,93,24,76,1,63,70];
+
+function m115GetKey(length, key) {
+  if (key) return Array.from({length}, (_, i) => ((key[i] + G_KTS[length * i]) & 0xff) ^ G_KTS[length * (length - 1 - i)]);
+  return (length === 12 ? G_KEY_L : G_KEY_S).slice();
+}
+
+function xor115Enc(src, key) {
+  const srclen = src.length, keylen = key.length;
+  const mod4 = srclen % 4;
+  const ret = [];
+  for (let i = 0; i < mod4; i++) ret.push(src[i] ^ key[i % keylen]);
+  for (let i = mod4; i < srclen; i++) ret.push(src[i] ^ key[(i - mod4) % keylen]);
+  return ret;
+}
+
+function m115SymEncode(src, key1, key2) {
+  let ret = xor115Enc(src, m115GetKey(4, key1));
+  ret.reverse();
+  return xor115Enc(ret, m115GetKey(12, key2));
+}
+
+function m115SymDecode(src, key1, key2) {
+  let ret = xor115Enc(src, m115GetKey(12, key2));
+  ret.reverse();
+  return xor115Enc(ret, m115GetKey(4, key1));
+}
+
+function strToBytes(s) { return [...s].map(c => c.charCodeAt(0)); }
+function bytesToStr(b) { return b.map(c => String.fromCharCode(c)).join(''); }
+
+function m115AsymEncode(src) {
+  const m = 128 - 11;
+  let ret = '';
+  for (let i = 0; i < Math.ceil(src.length / m); i++) {
+    ret += rsa115.encrypt(bytesToStr(src.slice(i * m, Math.min((i + 1) * m, src.length))));
+  }
+  return Buffer.from(rsa115.hex2a(ret), 'latin1').toString('base64');
+}
+
+function m115AsymDecode(src) {
+  const m = 128;
+  const buf = Buffer.from(src, 'base64').toString('latin1');
+  let ret = '';
+  for (let i = 0; i < Math.ceil(buf.length / m); i++) {
+    ret += rsa115.decrypt(buf.slice(i * m, Math.min((i + 1) * m, buf.length)));
+  }
+  return strToBytes(ret);
+}
+
+function m115Md5(str) {
+  return crypto.createHash('md5').update(str).digest('hex');
+}
+
+function m115Encode(src, tm) {
+  const key = strToBytes(m115Md5('!@###@#' + tm + 'DFDR@#@#'));
+  let tmp = strToBytes(src);
+  tmp = m115SymEncode(tmp, key, null);
+  tmp = key.slice(0, 16).concat(tmp);
+  return { data: m115AsymEncode(tmp), key };
+}
+
+function m115Decode(src, key) {
+  let tmp = m115AsymDecode(src);
+  return bytesToStr(m115SymDecode(tmp.slice(16), key, tmp.slice(0, 16)));
+}
 
 class OpenApi115 {
   constructor() {
@@ -141,42 +269,112 @@ class OpenApi115 {
     if (!cookie) return { success: false, error: '缺少用户 115 Cookie' };
     if (!pickcode) return { success: false, error: '缺少 pickcode' };
 
+    // 1. 优先使用 115 Chrome/App 官方协议接口 (proapi downurl + RSA+XOR)，无文件大小限制，100% 返回真实直链
     try {
-      const url = `https://proapi.115.com/app/chrome/downurl?pickcode=${pickcode}`;
-      const res = await this.http.get(url, {
+      const tm = Math.floor(Date.now() / 1000);
+      const enc = m115Encode(JSON.stringify({ pickcode }), tm);
+      const postBody = new URLSearchParams({ data: enc.data }).toString();
+
+      const res = await this.http.post(`https://proapi.115.com/app/chrome/downurl?t=${tm}`, postBody, {
         headers: {
           Cookie: cookie,
           Referer: 'https://115.com/',
-          'User-Agent': clientUserAgent || USER_AGENT
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT
+        },
+        timeout: 6000
+      });
+
+      if (res.data && res.data.state && res.data.data) {
+        let dataObj = null;
+        if (typeof res.data.data === 'string') {
+          try {
+            const decrypted = m115Decode(res.data.data, enc.key);
+            dataObj = JSON.parse(decrypted);
+          } catch (decErr) {
+            console.warn('[115] proapi downurl 解密异常:', decErr.message);
+          }
+        } else if (typeof res.data.data === 'object') {
+          dataObj = res.data.data;
+        }
+
+        if (dataObj && typeof dataObj === 'object') {
+          const fileObj = fileId ? dataObj[fileId] : Object.values(dataObj)[0];
+          const directUrl = fileObj && fileObj.url && (fileObj.url.url || fileObj.url);
+          if (directUrl && typeof directUrl === 'string') {
+            const uMatch = directUrl.match(/[?&]u=(\d+)/);
+            return {
+              success: true,
+              downloadUrl: directUrl,
+              fileId: fileId || Object.keys(dataObj)[0],
+              filename: fileObj.file_name || '',
+              filesize: fileObj.file_size || 0,
+              pickcode,
+              uid: uMatch ? uMatch[1] : ''
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[115] proapi downurl 官方协议解析尝试失败:', e.message);
+    }
+
+    // 2. 备用方式一：调用 webapi.115.com/files/download
+    try {
+      const webRes = await this.http.get(`https://webapi.115.com/files/download?pickcode=${pickcode}&dl=1`, {
+        headers: {
+          Cookie: cookie,
+          Referer: 'https://115.com/',
+          'User-Agent': USER_AGENT
         },
         timeout: 5000
       });
 
-      if (res.data && res.data.state && res.data.data) {
-        const fileObj = fileId ? res.data.data[fileId] : Object.values(res.data.data)[0];
-        if (fileObj && fileObj.url && fileObj.url.url) {
-          const directUrl = fileObj.url.url;
-          const uMatch = directUrl.match(/[?&]u=(\d+)/);
-          const linkUid = uMatch ? uMatch[1] : '';
-
-          return {
-            success: true,
-            downloadUrl: directUrl,
-            fileId: fileId || Object.keys(res.data.data)[0],
-            filename: fileObj.file_name || '',
-            filesize: fileObj.file_size || 0,
-            pickcode,
-            uid: linkUid
-          };
-        }
+      if (webRes.data && webRes.data.state && (webRes.data.file_url || webRes.data.file_url_302)) {
+        const directUrl = webRes.data.file_url || webRes.data.file_url_302;
+        const uMatch = directUrl.match(/[?&]u=(\d+)/);
+        return {
+          success: true,
+          downloadUrl: directUrl,
+          fileId: fileId || webRes.data.file_id || '',
+          filename: webRes.data.file_name || '',
+          filesize: webRes.data.file_size || 0,
+          pickcode,
+          uid: uMatch ? uMatch[1] : ''
+        };
       }
-      return {
-        success: false,
-        error: res.data ? (res.data.msg || '无法从小号网盘解析到直链地址') : '115上游无响应'
-      };
-    } catch (e) {
-      return { success: false, error: e.message };
-    }
+    } catch (e) {}
+
+    // 3. 备用方式二：调用 webapi.115.com/files/video
+    try {
+      const vidRes = await this.http.get(`https://webapi.115.com/files/video?pickcode=${pickcode}`, {
+        headers: {
+          Cookie: cookie,
+          Referer: 'https://115.com/',
+          'User-Agent': USER_AGENT
+        },
+        timeout: 5000
+      });
+
+      if (vidRes.data && vidRes.data.video_url && Array.isArray(vidRes.data.video_url) && vidRes.data.video_url.length > 0) {
+        const directUrl = vidRes.data.video_url[0].url;
+        const uMatch = directUrl ? directUrl.match(/[?&]u=(\d+)/) : null;
+        return {
+          success: true,
+          downloadUrl: directUrl,
+          fileId: fileId || vidRes.data.file_id || '',
+          filename: vidRes.data.file_name || '',
+          filesize: vidRes.data.file_size || 0,
+          pickcode,
+          uid: uMatch ? uMatch[1] : ''
+        };
+      }
+    } catch (e) {}
+
+    return {
+      success: false,
+      error: '未能从小号 Cookie 解析到 115 官方直链（可能是账号未存该文件或 Cookie 权限受限）'
+    };
   }
 
   /**
@@ -281,7 +479,8 @@ class OpenApi115 {
         'https://webapi.115.com/share/send',
         new URLSearchParams({
           file_ids: String(fileId),
-          share_to: 'copy'
+          share_to: 'copy',
+          ignore_warn: '1'
         }).toString(),
         {
           headers: {
@@ -290,7 +489,7 @@ class OpenApi115 {
             'Content-Type': 'application/x-www-form-urlencoded',
             'User-Agent': USER_AGENT
           },
-          timeout: 6000
+          timeout: 8000
         }
       );
 
@@ -298,15 +497,25 @@ class OpenApi115 {
       let receiveCode = '';
 
       if (sendRes.data && sendRes.data.state && sendRes.data.data) {
-        shareCode = sendRes.data.data.share_code;
-        receiveCode = sendRes.data.data.receive_code;
+        const d = sendRes.data.data;
+        shareCode = d.share_code || d.sharecode || d.snap_code || d.code || '';
+        receiveCode = d.receive_code || d.receivecode || d.password || d.pwd || '';
+
+        const shareUrl = d.share_url || d.url || '';
+        if (shareUrl) {
+          const match = shareUrl.match(/\/s\/([a-z0-9]+)(?:\?password=([a-z0-9]+))?/i);
+          if (match) {
+            if (!shareCode) shareCode = match[1];
+            if (!receiveCode && match[2]) receiveCode = match[2];
+          }
+        }
       } else {
         const errMsg = sendRes.data ? (sendRes.data.msg || sendRes.data.error || '创建分享链接失败') : '源盘响应异常';
         return { success: false, error: `源盘分享失败: ${errMsg}` };
       }
 
-      if (!shareCode || !receiveCode) {
-        return { success: false, error: '未能获取到有效分享码或提取码' };
+      if (!shareCode) {
+        return { success: false, error: `未能获取到有效分享码: ${JSON.stringify(sendRes.data)}` };
       }
 
       // 2. 小号接收转存至其指定的秒存目录
@@ -316,9 +525,10 @@ class OpenApi115 {
 
       const postParams = new URLSearchParams({
         share_code: shareCode,
-        receive_code: receiveCode,
+        receive_code: receiveCode || '',
         cid: cleanCid,
-        file_id: String(fileId)
+        file_id: String(fileId),
+        file_ids: String(fileId)
       });
       if (receiverUid) {
         postParams.append('user_id', receiverUid);
@@ -339,38 +549,57 @@ class OpenApi115 {
       );
 
       if (!receiveRes.data || !receiveRes.data.state) {
-        const errMsg = receiveRes.data ? (receiveRes.data.msg || receiveRes.data.error || '转存请求失败') : '转存响应异常';
-        return { success: false, error: `小号转存失败: ${errMsg}` };
+        const errCode = receiveRes.data && (receiveRes.data.errno || receiveRes.data.code);
+        const errMsg = receiveRes.data ? (receiveRes.data.msg || receiveRes.data.error || '') : '转存响应异常';
+        if (errCode === 4100024 || (errMsg && (errMsg.includes('已经接收') || errMsg.includes('无需重复') || errMsg.includes('已转存')))) {
+          console.log(`ℹ️ [115] 该文件小号已接收过，继续获取其 Pickcode`);
+        } else {
+          return { success: false, error: `小号转存失败: ${errMsg || errCode || JSON.stringify(receiveRes.data)}` };
+        }
       }
 
       // 3. 转存成功后，从小号目标目录或搜索获取新生成的文件 pickcode
       let newPickcode = '';
       let newFileId = '';
 
-      try {
-        const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=20&format=json&o=user_ptime&asc=0`;
-        const listRes = await this.http.get(listUrl, {
-          headers: {
-            Cookie: receiverCookie,
-            Referer: 'https://115.com/',
-            'User-Agent': USER_AGENT
-          },
-          timeout: 5000
-        });
+      const checkTargetDir = async () => {
+        try {
+          const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=20&format=json&o=user_ptime&asc=0`;
+          const listRes = await this.http.get(listUrl, {
+            headers: {
+              Cookie: receiverCookie,
+              Referer: 'https://115.com/',
+              'User-Agent': USER_AGENT
+            },
+            timeout: 5000
+          });
 
-        if (listRes.data && listRes.data.state && Array.isArray(listRes.data.data) && listRes.data.data.length > 0) {
-          let matched = null;
-          if (filename) {
-            matched = listRes.data.data.find(f => f.n === filename || f.n.includes(filename) || filename.includes(f.n));
+          if (listRes.data && listRes.data.state && Array.isArray(listRes.data.data) && listRes.data.data.length > 0) {
+            let matched = null;
+            if (filename) {
+              matched = listRes.data.data.find(f => f.n === filename || f.n.includes(filename) || filename.includes(f.n));
+            }
+            if (!matched) matched = listRes.data.data[0];
+            if (matched && matched.pc) {
+              return { pc: matched.pc, fid: matched.fid };
+            }
           }
-          if (!matched) matched = listRes.data.data[0];
-          if (matched && matched.pc) {
-            newPickcode = matched.pc;
-            newFileId = matched.fid;
-          }
+        } catch (e) {
+          console.warn('[115] 查验转存目录文件异常:', e.message);
         }
-      } catch (e) {
-        console.warn('[115] 查验转存目录文件异常:', e.message);
+        return null;
+      };
+
+      let dirHit = await checkTargetDir();
+      if (!dirHit) {
+        // 等待 600ms 以应对 115 目录落盘的最终一致性延迟
+        await new Promise(r => setTimeout(r, 600));
+        dirHit = await checkTargetDir();
+      }
+
+      if (dirHit) {
+        newPickcode = dirHit.pc;
+        newFileId = dirHit.fid;
       }
 
       // 若目录列出未拿到，备用按文件名在小号盘内检索
@@ -542,41 +771,22 @@ class OpenApi115 {
   async resolveFileOnCookie(cookie, pickcode = '', filename = '', sha1 = '') {
     if (!cookie) return { found: false };
 
-    // 1. 若有 pickcode，优先通过 downurl 探测该账号是否直接拥有该文件 (100% 准确提取该账号所属真实 file_id)
+    // 1. 若有 pickcode，优先通过 getUserDirectLink 探测该账号是否直接拥有该文件 (100% 准确提取该账号所属真实 file_id 与直链)
     if (pickcode) {
-      try {
-        const url = `https://proapi.115.com/app/chrome/downurl?pickcode=${pickcode}`;
-        const res = await this.http.get(url, {
-          headers: {
-            Cookie: cookie,
-            Referer: 'https://115.com/',
-            'User-Agent': USER_AGENT
-          },
-          timeout: 4000
-        });
+      const linkRes = await this.getUserDirectLink(cookie, pickcode);
+      if (linkRes.success && linkRes.downloadUrl) {
+        return {
+          found: true,
+          fileId: linkRes.fileId,
+          pickcode: linkRes.pickcode || pickcode,
+          filename: linkRes.filename || filename,
+          filesize: linkRes.filesize || 0,
+          downloadUrl: linkRes.downloadUrl,
+          uid: linkRes.uid
+        };
+      }
 
-        if (res.data && res.data.state && res.data.data) {
-          const keys = Object.keys(res.data.data);
-          if (keys.length > 0) {
-            const fid = keys[0];
-            const fileObj = res.data.data[fid];
-            if (fileObj && fileObj.url && fileObj.url.url) {
-              const uMatch = fileObj.url.url.match(/[?&]u=(\d+)/);
-              return {
-                found: true,
-                fileId: fid,
-                pickcode: fileObj.pick_code || pickcode,
-                filename: fileObj.file_name || filename,
-                filesize: fileObj.file_size || 0,
-                downloadUrl: fileObj.url.url,
-                uid: uMatch ? uMatch[1] : ''
-              };
-            }
-          }
-        }
-      } catch (e) {}
-
-      // 1.2 若 downurl 未直接生效，在指定账号网盘中直接搜索该 pickcode
+      // 1.2 若直接解析直链未命中，在指定账号网盘中直接搜索该 pickcode
       const pcSearch = await this.searchUserDrive(cookie, pickcode);
       if (pcSearch.found && pcSearch.fileId) {
         return pcSearch;
@@ -587,13 +797,24 @@ class OpenApi115 {
     if (filename && !filename.includes('redirect_url') && !filename.includes('pickcode=')) {
       const searchRes = await this.searchUserDrive(cookie, filename);
       if (searchRes.found && searchRes.fileId) {
+        let resolvedDl = '';
+        let resolvedUid = '';
+        if (searchRes.pickcode) {
+          const directRes = await this.getUserDirectLink(cookie, searchRes.pickcode, searchRes.fileId);
+          if (directRes.success && directRes.downloadUrl) {
+            resolvedDl = directRes.downloadUrl;
+            resolvedUid = directRes.uid;
+          }
+        }
         return {
           found: true,
           fileId: searchRes.fileId,
           pickcode: searchRes.pickcode,
           filename: searchRes.filename || filename,
           filesize: searchRes.filesize || 0,
-          sha1: searchRes.sha1 || sha1
+          sha1: searchRes.sha1 || sha1,
+          downloadUrl: resolvedDl,
+          uid: resolvedUid
         };
       }
     }

@@ -210,92 +210,100 @@ function createEmbyMiddleware() {
           console.log(`🎯 [Step 1 搜索命中] 在小号网盘匹配到已存文件: "${ownResolved.filename}" (Pickcode: ${ownResolved.pickcode})`);
           const linkRes = ownResolved.downloadUrl ? { success: true, downloadUrl: ownResolved.downloadUrl, uid: ownResolved.uid }
                                                  : await openApi115.getUserDirectLink(userCookie, ownResolved.pickcode, ownResolved.fileId, clientUa);
-          if (linkRes.success) {
-            resolvedDirectUrl = linkRes.downloadUrl;
-            resolvedUid = linkRes.uid;
-            accelerationModeUsed = 'STEP1_OWN_DRIVE';
-            console.log(`✅ [Step 1 命中] 由用户 ${currentUserName} 自有 Cookie 签发直链播放 (UID: ${resolvedUid})`);
-            if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, ownResolved.pickcode, ownResolved.fileId);
-          }
-        }
-      }
-
-      // 3. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】
-      if (!resolvedDirectUrl) {
-        console.log(`📦 [Step 2 秒传转存] 小号未持有 "${sourceFilename || itemId}"，开始秒传转存至小号秒存目录...`);
-
-        // 确保小号秒存目录有效存在 (若用户未配置 save_cid_115 则自动探测/创建 /EmbyCache)
-        let targetCid = currentUser ? currentUser.save_cid_115 : '';
-        if (!targetCid || targetCid === '0') {
-          const dirEnsure = await openApi115.ensureCacheDirectory(userCookie, (currentUser && currentUser.save_dir_115) || '/EmbyCache');
-          if (dirEnsure.success && dirEnsure.cid) {
-            targetCid = dirEnsure.cid;
-            if (currentUser) dbService.updateUserSaveDir(currentUser.id, currentUser.save_dir_115 || '/EmbyCache', targetCid);
-          }
-        }
-
-        // 3.1 优先分布式秒传 (P2P 用户间转存，完全不碰大号源盘)
-        if (sourceSha1 && currentUser) {
-          const peerUser = dbService.findRecentPeerWithFile(sourceSha1, currentUser.id);
-          if (peerUser && peerUser.cookie_115 && (peerUser.file_id || sourceFileId)) {
-            console.log(`🤝 [Step 2 P2P互传] 发现节点用户 ${peerUser.username} 拥有相同资源，秒传至用户 ${currentUserName}`);
-            const p2pRes = await openApi115.shareAndReceiveFile(
-              peerUser.cookie_115,
-              userCookie,
-              peerUser.file_id || sourceFileId,
-              targetCid,
-              sourceFilename
-            );
-            if (p2pRes.success && p2pRes.pickcode) {
-              const linkRes = await openApi115.getUserDirectLink(userCookie, p2pRes.pickcode, p2pRes.fileId, clientUa);
-              if (linkRes.success) {
-                resolvedDirectUrl = linkRes.downloadUrl;
-                resolvedUid = linkRes.uid;
-                accelerationModeUsed = 'STEP2_PEER_P2P';
-                console.log(`🎉 [Step 2 P2P成功] 用户间互传完成！直链由小号 Cookie 签发 (UID: ${resolvedUid})`);
-                dbService.recordUserFile(currentUser.id, sourceSha1, p2pRes.pickcode, p2pRes.fileId);
-              }
+            if (linkRes.success) {
+              resolvedDirectUrl = linkRes.downloadUrl;
+              resolvedUid = linkRes.uid;
+              accelerationModeUsed = 'STEP1_OWN_DRIVE';
+              console.log(`✅ [Step 1 命中] 由用户 ${currentUserName} 自有 Cookie 签发直链播放 (UID: ${resolvedUid})`);
+              if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, ownResolved.pickcode, ownResolved.fileId);
+            } else {
+              console.warn(`⚠️ [Step 1] 小号网盘已匹配到文件，但直链解析失败: ${linkRes.error}`);
             }
           }
         }
 
-        // 3.2 若 P2P 未命中，通过源网盘 Cookie 池秒传转存至小号 (逐一寻源确保持有真实 file_id)
+        // 3. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】
         if (!resolvedDirectUrl) {
-          const activeCookies = dbService.getAllCookiePool().filter(c => c.status === 'active');
-          if (activeCookies.length > 0) {
-            for (const sourceCookieObj of activeCookies) {
-              console.log(`🔍 [Step 3 寻源] 在源网盘 (${sourceCookieObj.name || 'Master'}) 中精确定位真实文件...`);
-              const resolvedSource = await openApi115.resolveFileOnCookie(sourceCookieObj.cookie, sourcePickcode, sourceFilename, sourceSha1);
-              if (resolvedSource.found && resolvedSource.fileId) {
-                console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name}) 执行秒传转存至小号目录 (${targetCid})... (FileId: ${resolvedSource.fileId}, Name: "${resolvedSource.filename}")`);
-                dbService.updateCookieUsed(sourceCookieObj.id);
+          console.log(`📦 [Step 2 秒传转存] 小号未持有 "${sourceFilename || itemId}"，开始秒传转存至小号秒存目录...`);
 
-                const transferRes = await openApi115.shareAndReceiveFile(
-                  sourceCookieObj.cookie,
-                  userCookie,
-                  resolvedSource.fileId,
-                  targetCid,
-                  sourceFilename
-                );
+          // 确保小号秒存目录有效存在 (若用户未配置 save_cid_115 则自动探测/创建 /EmbyCache)
+          let targetCid = currentUser ? currentUser.save_cid_115 : '';
+          if (!targetCid || targetCid === '0') {
+            const dirEnsure = await openApi115.ensureCacheDirectory(userCookie, (currentUser && currentUser.save_dir_115) || '/EmbyCache');
+            if (dirEnsure.success && dirEnsure.cid) {
+              targetCid = dirEnsure.cid;
+              if (currentUser) dbService.updateUserSaveDir(currentUser.id, currentUser.save_dir_115 || '/EmbyCache', targetCid);
+            }
+          }
 
-                if (transferRes.success && transferRes.pickcode) {
-                  const linkRes = await openApi115.getUserDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
-                  if (linkRes.success) {
-                    resolvedDirectUrl = linkRes.downloadUrl;
-                    resolvedUid = linkRes.uid;
-                    accelerationModeUsed = 'STEP3_SOURCE_TRANSFERRED';
-                    console.log(`🎉 [Step 3 转存成功] 文件已落库小号秒存目录！直链由小号 Cookie 签发 (UID: ${resolvedUid})，大号风险0`);
-                    if (sourceSha1 && currentUser) {
-                      dbService.recordUserFile(currentUser.id, sourceSha1, transferRes.pickcode, transferRes.fileId);
-                      dbService.recordFileUser(sourceSha1, currentUser.id);
-                    }
-                    break;
-                  }
+          // 3.1 优先分布式秒传 (P2P 用户间转存，完全不碰大号源盘)
+          if (sourceSha1 && currentUser) {
+            const peerUser = dbService.findRecentPeerWithFile(sourceSha1, currentUser.id);
+            if (peerUser && peerUser.cookie_115 && (peerUser.file_id || sourceFileId)) {
+              console.log(`🤝 [Step 2 P2P互传] 发现节点用户 ${peerUser.username} 拥有相同资源，秒传至用户 ${currentUserName}`);
+              const p2pRes = await openApi115.shareAndReceiveFile(
+                peerUser.cookie_115,
+                userCookie,
+                peerUser.file_id || sourceFileId,
+                targetCid,
+                sourceFilename
+              );
+              if (p2pRes.success && p2pRes.pickcode) {
+                const linkRes = await openApi115.getUserDirectLink(userCookie, p2pRes.pickcode, p2pRes.fileId, clientUa);
+                if (linkRes.success) {
+                  resolvedDirectUrl = linkRes.downloadUrl;
+                  resolvedUid = linkRes.uid;
+                  accelerationModeUsed = 'STEP2_PEER_P2P';
+                  console.log(`🎉 [Step 2 P2P成功] 用户间互传完成！直链由小号 Cookie 签发 (UID: ${resolvedUid})`);
+                  dbService.recordUserFile(currentUser.id, sourceSha1, p2pRes.pickcode, p2pRes.fileId);
                 } else {
-                  console.warn(`⚠️ [Step 3] 源网盘 (${sourceCookieObj.name}) 秒传转存失败: ${transferRes.error}`);
+                  console.warn(`⚠️ [Step 2 P2P] 互传完成，但小号直链解析失败: ${linkRes.error}`);
+                }
+              } else {
+                console.warn(`⚠️ [Step 2 P2P] 互传失败: ${p2pRes.error || '未获取到有效 Pickcode'}`);
+              }
+            }
+          }
+
+          // 3.2 若 P2P 未命中，通过源网盘 Cookie 池秒传转存至小号 (逐一寻源确保持有真实 file_id)
+          if (!resolvedDirectUrl) {
+            const activeCookies = dbService.getAllCookiePool().filter(c => c.status === 'active');
+            if (activeCookies.length > 0) {
+              for (const sourceCookieObj of activeCookies) {
+                console.log(`🔍 [Step 3 寻源] 在源网盘 (${sourceCookieObj.name || 'Master'}) 中精确定位真实文件...`);
+                const resolvedSource = await openApi115.resolveFileOnCookie(sourceCookieObj.cookie, sourcePickcode, sourceFilename, sourceSha1);
+                if (resolvedSource.found && resolvedSource.fileId) {
+                  console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name}) 执行秒传转存至小号目录 (${targetCid})... (FileId: ${resolvedSource.fileId}, Name: "${resolvedSource.filename}")`);
+                  dbService.updateCookieUsed(sourceCookieObj.id);
+
+                  const transferRes = await openApi115.shareAndReceiveFile(
+                    sourceCookieObj.cookie,
+                    userCookie,
+                    resolvedSource.fileId,
+                    targetCid,
+                    sourceFilename
+                  );
+
+                  if (transferRes.success && transferRes.pickcode) {
+                    const linkRes = await openApi115.getUserDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
+                    if (linkRes.success) {
+                      resolvedDirectUrl = linkRes.downloadUrl;
+                      resolvedUid = linkRes.uid;
+                      accelerationModeUsed = 'STEP3_SOURCE_TRANSFERRED';
+                      console.log(`🎉 [Step 3 转存成功] 文件已落库小号秒存目录！直链由小号 Cookie 签发 (UID: ${resolvedUid})，大号风险0`);
+                      if (sourceSha1 && currentUser) {
+                        dbService.recordUserFile(currentUser.id, sourceSha1, transferRes.pickcode, transferRes.fileId);
+                        dbService.recordFileUser(sourceSha1, currentUser.id);
+                      }
+                      break;
+                    } else {
+                      console.warn(`⚠️ [Step 3] 小号已转存该文件，但解析直链失败: ${linkRes.error}`);
+                    }
+                  } else {
+                    console.warn(`⚠️ [Step 3] 源网盘 (${sourceCookieObj.name}) 秒传转存失败: ${transferRes.error || '未获取到转存后的有效 Pickcode'}`);
+                  }
                 }
               }
-            }
             if (!resolvedDirectUrl) {
               console.warn(`ℹ️ [Step 3] Cookie 池中所有账号均未直接持有该文件 ("${sourceFilename || sourcePickcode}")，无法执行跨号转存`);
             }
