@@ -25,8 +25,8 @@ class CacheScheduler {
   /**
    * 生成统一格式键名
    */
-  makeKey(category, id, subId = 'global') {
-    return `${category}:${id}:${subId}`;
+  makeKey(category, ...parts) {
+    return [category, ...parts].map(p => String(p != null ? p : '')).join(':');
   }
 
   /**

@@ -86,16 +86,17 @@ router.post('/user/register', async (req, res) => {
     return res.status(403).json({ success: false, error: `注册名额已满！系统上限支持 ${maxLimit} 名用户` });
   }
 
-  const { username, password } = req.body;
-  if (!username || !username.trim()) {
+  const rawUsername = req.body && req.body.username != null ? String(req.body.username).trim() : '';
+  const rawPassword = req.body && req.body.password != null ? String(req.body.password).trim() : '';
+  if (!rawUsername) {
     return res.status(400).json({ success: false, error: '请输入有效的用户名' });
   }
-  if (!password || password.trim().length < 6) {
+  if (!rawPassword || rawPassword.length < 6) {
     return res.status(400).json({ success: false, error: '新账号注册时密码须至少6位' });
   }
 
-  const cleanUsername = username.trim();
-  const cleanPassword = password.trim();
+  const cleanUsername = rawUsername;
+  const cleanPassword = rawPassword;
 
   const existing = dbService.findUserByUsername(cleanUsername);
   if (existing) {
@@ -139,18 +140,19 @@ router.post('/user/register', async (req, res) => {
 
 // 1.3 用户登录接口 (支持本地密码与 Emby 上游密码穿透认证，全面兼容任意长度及无密码 Emby 用户)
 router.post('/user/login', async (req, res) => {
-  const { username } = req.body;
-  const rawPassword = req.body.password != null ? String(req.body.password) : '';
-  if (!username || !username.trim()) {
+  const rawUsername = req.body && req.body.username != null ? String(req.body.username).trim() : '';
+  const rawPassword = req.body && req.body.password != null ? String(req.body.password) : '';
+  if (!rawUsername) {
     return res.status(400).json({ success: false, error: '请输入用户名' });
   }
 
-  const cleanUsername = username.trim();
+  const cleanUsername = rawUsername;
   const cleanPassword = rawPassword;
   const crypto = require('crypto');
   const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
 
-  let user = dbService.findUserByUsername(cleanUsername);
+  // 支持输入 Emby 用户名或 Emby 专属 UserId
+  let user = dbService.findUserByUsername(cleanUsername) || dbService.findUserByEmbyUserId(cleanUsername);
 
   // 场景 A: 本地存在该用户
   if (user) {
@@ -165,7 +167,8 @@ router.post('/user/login', async (req, res) => {
       }
     } else {
       // 2. 本地尚无密码哈希 (从 Emby 同步导入的老用户) 或密码不匹配，尝试向 Emby 上游发起穿透认证
-      const embyAuth = await embyApi.authenticateUser(cleanUsername, cleanPassword);
+      const authUsername = user.username || cleanUsername;
+      const embyAuth = await embyApi.authenticateUser(authUsername, cleanPassword);
       if (embyAuth.success) {
         // 验证通过：在本地沉淀该密码哈希与明文，补齐关联
         try {
@@ -183,7 +186,8 @@ router.post('/user/login', async (req, res) => {
     const embyAuth = await embyApi.authenticateUser(cleanUsername, cleanPassword);
     if (embyAuth.success) {
       // 自动在 Funland 为该 Emby 用户建档开户
-      const newId = dbService.createUser(cleanUsername, passwordHash, embyAuth.embyUserId, cleanPassword);
+      const officialName = embyAuth.embyUser?.Name || cleanUsername;
+      const newId = dbService.createUser(officialName, passwordHash, embyAuth.embyUserId, cleanPassword);
       user = dbService.findUserById(newId);
     } else {
       return res.status(401).json({ success: false, error: '用户名或密码错误' });
@@ -304,10 +308,11 @@ router.get('/user/status', async (req, res) => {
 // 6. 保存用户网盘设置 (例如秒存文件夹与对应 CID)
 router.post('/user/settings', (req, res) => {
   const { username, saveDir, saveCid } = req.body || {};
-  if (!username) {
+  const cleanUsername = username != null ? String(username).trim() : '';
+  if (!cleanUsername) {
     return res.status(400).json({ success: false, error: '用户名不能为空' });
   }
-  const user = dbService.findUserByUsername(username.trim());
+  const user = dbService.findUserByUsername(cleanUsername);
   if (!user) {
     return res.status(404).json({ success: false, error: '未找到指定用户' });
   }
@@ -327,9 +332,9 @@ router.post('/user/settings', (req, res) => {
 
 // 7. 获取用户的 115 网盘文件夹列表 (供前端文件夹选择器使用)
 router.get('/115/folders', async (req, res) => {
-  const username = req.query.username || 'default_user';
+  const cleanUsername = req.query && req.query.username != null ? String(req.query.username).trim() : 'default_user';
   const cid = req.query.cid || '0';
-  const user = dbService.findUserByUsername(username.trim());
+  const user = dbService.findUserByUsername(cleanUsername);
 
   if (!user || !user.cookie_115) {
     return res.status(400).json({ success: false, error: '用户尚未绑定 115 网盘' });
@@ -345,7 +350,8 @@ router.post('/115/folders/create', async (req, res) => {
   if (!name || !name.trim()) {
     return res.status(400).json({ success: false, error: '文件夹名称不能为空' });
   }
-  const user = dbService.findUserByUsername((username || 'default_user').trim());
+  const cleanUsername = username != null ? String(username).trim() : 'default_user';
+  const user = dbService.findUserByUsername(cleanUsername);
   if (!user || !user.cookie_115) {
     return res.status(400).json({ success: false, error: '用户尚未绑定 115 网盘' });
   }

@@ -155,14 +155,22 @@ const dbService = {
     return row ? row.count : 0;
   },
   findUserByUsername(username) {
-    return db.prepare("SELECT * FROM users WHERE username = ?").get(username);
+    if (username == null) return null;
+    const nameStr = String(username).trim();
+    if (!nameStr) return null;
+    return db.prepare("SELECT * FROM users WHERE username = ?").get(nameStr);
   },
   findUserById(id) {
-    return db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+    if (id == null) return null;
+    const numId = parseInt(id, 10);
+    if (isNaN(numId)) return null;
+    return db.prepare("SELECT * FROM users WHERE id = ?").get(numId);
   },
   findUserByEmbyUserId(embyUserId) {
     if (!embyUserId) return null;
-    return db.prepare("SELECT * FROM users WHERE emby_user_id = ?").get(embyUserId);
+    const idStr = String(embyUserId).trim();
+    if (!idStr) return null;
+    return db.prepare("SELECT * FROM users WHERE emby_user_id = ?").get(idStr);
   },
   createUser(username, passwordHash, embyUserId = '', plainPassword = '') {
     const now = new Date().toISOString();
