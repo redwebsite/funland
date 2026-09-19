@@ -176,6 +176,10 @@ const dbService = {
     const now = new Date().toISOString();
     return db.prepare("UPDATE users SET plain_password = ?, updated_at = ? WHERE id = ?").run(plainPassword, now, id);
   },
+  updateUserPassword(id, passwordHash, plainPassword = '') {
+    const now = new Date().toISOString();
+    return db.prepare("UPDATE users SET password_hash = ?, plain_password = ?, updated_at = ? WHERE id = ?").run(passwordHash, plainPassword, now, id);
+  },
   updateEmbyUserId(id, embyUserId) {
     const now = new Date().toISOString();
     return db.prepare("UPDATE users SET emby_user_id = ?, updated_at = ? WHERE id = ?").run(embyUserId, now, id);

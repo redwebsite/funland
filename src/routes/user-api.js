@@ -134,33 +134,56 @@ router.post('/user/register', async (req, res) => {
   });
 });
 
-// 1.3 用户登录接口
-router.post('/user/login', (req, res) => {
+// 1.3 用户登录接口 (支持本地密码与 Emby 上游密码穿透认证)
+router.post('/user/login', async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ success: false, error: '请输入用户名和密码' });
   }
 
-  const user = dbService.findUserByUsername(username.trim());
-  if (!user) {
-    return res.status(401).json({ success: false, error: '用户名或密码错误' });
-  }
-
-  if (user.cookie_status === 'disabled') {
-    return res.status(403).json({ success: false, error: '该用户已被管理员停用' });
-  }
-
+  const cleanUsername = username.trim();
+  const cleanPassword = password.trim();
   const crypto = require('crypto');
-  const passwordHash = crypto.createHash('sha256').update(password.trim()).digest('hex');
-  if (user.password_hash && user.password_hash !== passwordHash) {
-    return res.status(401).json({ success: false, error: '用户名或密码错误' });
-  }
+  const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
 
-  // 若该用户尚未记录密码（历史注册老用户），在此登录成功时自动静默回填
-  if (!user.plain_password) {
-    try {
-      dbService.updateUserPlainPassword(user.id, password.trim());
-    } catch (e) {}
+  let user = dbService.findUserByUsername(cleanUsername);
+
+  // 场景 A: 本地存在该用户
+  if (user) {
+    if (user.cookie_status === 'disabled') {
+      return res.status(403).json({ success: false, error: '该用户已被管理员停用' });
+    }
+
+    // 1. 若本地已有密码哈希且完全匹配，直接通过
+    if (user.password_hash && user.password_hash === passwordHash) {
+      if (!user.plain_password) {
+        try { dbService.updateUserPlainPassword(user.id, cleanPassword); } catch (e) {}
+      }
+    } else {
+      // 2. 本地尚无密码哈希 (从 Emby 同步导入的老用户) 或密码不匹配，尝试向 Emby 上游发起穿透认证
+      const embyAuth = await embyApi.authenticateUser(cleanUsername, cleanPassword);
+      if (embyAuth.success) {
+        // 验证通过：在本地沉淀该密码哈希与明文，补齐关联
+        try {
+          dbService.updateUserPassword(user.id, passwordHash, cleanPassword);
+          if (!user.emby_user_id && embyAuth.embyUserId) {
+            dbService.updateEmbyUserId(user.id, embyAuth.embyUserId);
+          }
+        } catch (e) {}
+      } else {
+        return res.status(401).json({ success: false, error: '用户名或密码错误' });
+      }
+    }
+  } else {
+    // 场景 B: 本地尚未记录该用户，尝试验证是否为 Emby 现有老用户
+    const embyAuth = await embyApi.authenticateUser(cleanUsername, cleanPassword);
+    if (embyAuth.success) {
+      // 自动在 Funland 为该 Emby 用户建档开户
+      const newId = dbService.createUser(cleanUsername, passwordHash, embyAuth.embyUserId, cleanPassword);
+      user = dbService.findUserById(newId);
+    } else {
+      return res.status(401).json({ success: false, error: '用户名或密码错误' });
+    }
   }
 
   res.json({
@@ -174,6 +197,7 @@ router.post('/user/login', (req, res) => {
     }
   });
 });
+
 
 // 2. 115 OpenAPI 扫码：创建扫码登录会话
 router.post('/115/qrcode/token', async (req, res) => {

@@ -340,6 +340,34 @@ async function fetchEmbyUsersList(selectedUserId = '') {
   }
 }
 
+async function syncAllEmbyUsers() {
+  if (!confirm('确定要从 Emby 服务器全量拉取并同步所有用户到 Funland 吗？\n\n- 自动排除当前选中的模板用户\n- 已存在用户自动补齐关联，不会覆盖现有 115 绑定配置\n- 新导入用户可直接使用其 Emby 现有密码登录 Funland 用户中心')) {
+    return;
+  }
+
+  try {
+    showToast('正在向 Emby 发起全量用户同步，请稍候...', 'info');
+    const res = await adminFetch('/api/admin/sync-emby-users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(json.msg || 'Emby 用户全量同步成功！');
+      fetchEmbyUsersList();
+      if (typeof loadUsers === 'function') loadUsers();
+      if (typeof loadStats === 'function') loadStats();
+      alert(`🎉 Emby 用户同步完成！\n\n- Emby 检测总数: ${json.summary.total} 人\n- 成功新增导入: ${json.summary.createdCount} 人\n- 自动补齐关联: ${json.summary.updatedCount} 人\n- 排除模板用户: ${json.summary.skippedTemplate ? json.summary.skippedTemplate : '无'}\n\n所有新导入用户现已可在 Funland 用户中心直接使用其 Emby 原密码登录并绑定 115！`);
+    } else {
+      showToast(json.error || '同步失败', 'error');
+      alert(`⚠️ 同步失败: ${json.error || '未知错误'}`);
+    }
+  } catch (err) {
+    showToast('同步请求失败: ' + err.message, 'error');
+  }
+}
+
+
 async function saveEmbySyncSettings(e) {
   if (e && e.preventDefault) e.preventDefault();
   const syncUser = document.getElementById('cfgEmbySyncUser').value;

@@ -394,4 +394,67 @@ router.post('/users/:id/sync-emby', async (req, res) => {
   }
 });
 
+// 17. 一键全量同步 Emby 用户至 Funland（自动排除模板用户，支持智能防重关联）
+router.post('/sync-emby-users', async (req, res) => {
+  try {
+    const embyUsers = await embyApi.getEmbyUsers();
+    if (!Array.isArray(embyUsers) || embyUsers.length === 0) {
+      return res.status(400).json({ success: false, error: '未能从 Emby 获取到任何有效用户，请检查上游地址与 API Key' });
+    }
+
+    const templateUserId = dbService.getSetting('emby_template_user_id', '');
+    const templateUserName = dbService.getSetting('emby_template_user_name', '');
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const createdUsers = [];
+    const updatedUsers = [];
+    let skippedTemplateName = '';
+
+    for (const u of embyUsers) {
+      // 1. 自动过滤选中的模板用户 (Template User)
+      if ((templateUserId && u.id === templateUserId) || 
+          (templateUserName && (u.name === templateUserName || templateUserName.startsWith(u.name)))) {
+        skippedTemplateName = u.name;
+        skippedCount++;
+        continue;
+      }
+
+      // 2. 检查 Funland 本地是否已存在该用户
+      const existing = dbService.findUserByUsername(u.name) || dbService.findUserByEmbyUserId(u.id);
+      if (existing) {
+        // 如果未关联 emby_user_id，自动补齐关联
+        if (!existing.emby_user_id || existing.emby_user_id !== u.id) {
+          dbService.updateEmbyUserId(existing.id, u.id);
+        }
+        updatedCount++;
+        updatedUsers.push(u.name);
+      } else {
+        // 3. 自动在 Funland 本地建档（密码哈希留空，支持 Emby 密码穿透首次登录）
+        dbService.createUser(u.name, '', u.id, '');
+        createdCount++;
+        createdUsers.push(u.name);
+      }
+    }
+
+    res.json({
+      success: true,
+      summary: {
+        total: embyUsers.length,
+        createdCount,
+        updatedCount,
+        skippedCount,
+        skippedTemplate: skippedTemplateName || templateUserName || templateUserId || null,
+        createdUsers,
+        updatedUsers
+      },
+      msg: `同步完成！检测到 ${embyUsers.length} 名 Emby 用户：成功新增导入 ${createdCount} 人，自动关联已有 ${updatedCount} 人${skippedCount > 0 ? `，已自动跳过模板用户 (${skippedTemplateName || 'Template'})` : ''}。`
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 module.exports = router;
+

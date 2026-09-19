@@ -51,6 +51,41 @@ class EmbyApiService {
   }
 
   /**
+   * 使用用户名与密码向上游 Emby 进行凭据验证
+   */
+  async authenticateUser(username, password) {
+    const base = this.getUpstreamBase();
+    if (!base) return { success: false, error: '未配置 Emby 上游服务器地址' };
+
+    try {
+      const res = await axios.post(`${base}/emby/Users/AuthenticateByName`, {
+        Username: username,
+        Pw: password
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Emby-Authorization': 'MediaBrowser Client="Funland", Device="Server", DeviceId="funland-auth", Version="2.0.0"'
+        },
+        httpsAgent,
+        timeout: 6000
+      });
+
+      if (res.data && res.data.User) {
+        return {
+          success: true,
+          embyUserId: res.data.User.Id,
+          embyUser: res.data.User
+        };
+      }
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.response?.data || err.message;
+      return { success: false, error: typeof errMsg === 'string' ? errMsg : 'Emby 用户名或密码错误' };
+    }
+
+    return { success: false, error: 'Emby 用户名或密码错误' };
+  }
+
+  /**
    * 获取指定用户的完整详情（包含 Policy 和 Configuration）
    */
   async getEmbyUser(userId) {
