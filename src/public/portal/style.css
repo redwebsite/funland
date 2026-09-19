@@ -233,15 +233,15 @@ body {
 /* ─── 特性微卡片 ─── */
 .hero-cards-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  max-width: 920px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  max-width: 960px;
   width: 100%;
   margin: 0 auto;
 }
 
 @media (max-width: 860px) {
-  .hero-cards-grid { grid-template-columns: 1fr; }
+  .hero-cards-grid { grid-template-columns: repeat(2, 1fr); }
   .hero-title { font-size: 2rem; }
   .navbar { padding: 14px 20px; }
 }
@@ -250,11 +250,11 @@ body {
   background: rgba(17, 24, 39, 0.55);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 16px;
-  padding: 18px 20px;
+  border-radius: 14px;
+  padding: 14px 16px;
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  align-items: center;
+  gap: 12px;
   text-align: left;
   transition: all 0.25s ease;
   position: relative;

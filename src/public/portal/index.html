@@ -48,7 +48,7 @@
       </div>
       <h1 class="hero-title">下一代私有媒体<br>直链加速引擎</h1>
 
-      <!-- 3 个特性卡片 -->
+      <!-- 4 个特性卡片 -->
       <div class="hero-cards-grid">
         <div class="hero-micro-card">
           <div class="micro-card-icon-wrap c-indigo">
@@ -56,7 +56,6 @@
           </div>
           <div class="micro-card-body">
             <div class="micro-card-title">全客户端透明兼容</div>
-            <p class="micro-card-desc">无感代理，海报墙、字幕、进度条与 Emby 原生完全同步</p>
           </div>
         </div>
 
@@ -66,7 +65,6 @@
           </div>
           <div class="micro-card-body">
             <div class="micro-card-title">毫秒级 302 调度</div>
-            <p class="micro-card-desc">命中缓存时直出，首次播放亦在秒内完成链路解析</p>
           </div>
         </div>
 
@@ -76,7 +74,15 @@
           </div>
           <div class="micro-card-body">
             <div class="micro-card-title">三级风险隔离机制</div>
-            <p class="micro-card-desc">个人盘直出 → 节点间秒传 → 源盘兜底，大号 Cookie 全程不落地</p>
+          </div>
+        </div>
+
+        <div class="hero-micro-card">
+          <div class="micro-card-icon-wrap c-amber">
+            <i class="ri-timer-flash-line"></i>
+          </div>
+          <div class="micro-card-body">
+            <div class="micro-card-title">30 min 滑动缓存续期</div>
           </div>
         </div>
       </div>
@@ -210,7 +216,7 @@
           </div>
         </div>
 
-        <!-- 4 步接入指引 -->
+        <!-- 2 步精简接入指引 -->
         <div id="guideSteps" class="steps-list">
           <div class="step-item">
             <div class="step-number">1</div>
@@ -224,13 +230,6 @@
             <div class="step-content">
               <strong>登录你的账号</strong>
               <span>使用本站注册的用户名与密码登录即可</span>
-            </div>
-          </div>
-          <div class="step-item">
-            <div class="step-number">3</div>
-            <div class="step-content">
-              <strong>点播享受满速直链</strong>
-              <span>Funland 实时拦截请求，自动调度 CDN 直链</span>
             </div>
           </div>
         </div>
@@ -260,7 +259,6 @@
           <div class="arch-step-num emerald">STEP 1</div>
           <div class="arch-card-icon"><i class="ri-user-line"></i></div>
           <div class="arch-card-title">个人盘即时直出</div>
-          <div class="arch-card-desc">优先查询你的 115 网盘，命中即返回个人 CDN 签名链接</div>
         </div>
 
         <div class="arch-arrow"><i class="ri-arrow-right-line"></i></div>
@@ -269,7 +267,6 @@
           <div class="arch-step-num cyan">STEP 2</div>
           <div class="arch-card-icon"><i class="ri-team-line"></i></div>
           <div class="arch-card-title">节点间秒传共享</div>
-          <div class="arch-card-desc">本盘未持有时，从其他用户网盘秒传复制，无外部流量消耗</div>
         </div>
 
         <div class="arch-arrow"><i class="ri-arrow-right-line"></i></div>
@@ -278,15 +275,6 @@
           <div class="arch-step-num amber">STEP 3</div>
           <div class="arch-card-icon"><i class="ri-cloud-line"></i></div>
           <div class="arch-card-title">源盘转存兜底</div>
-          <div class="arch-card-desc">前两步均未命中时，由源盘安全转存，大号直链永不下发</div>
-        </div>
-      </div>
-
-      <!-- 缓存说明 -->
-      <div class="cache-badge-row">
-        <div class="cache-badge">
-          <i class="ri-timer-flash-line"></i>
-          <span>直链命中后自动进入 <strong>30 分钟滑动缓存</strong>，拖拽重播自动续期，无频繁 API 调用</span>
         </div>
       </div>
     </div>
