@@ -17,34 +17,44 @@ document.addEventListener('DOMContentLoaded', () => {
 // 1. 获取系统信息
 async function loadSystemInfo() {
   const currentHost = window.location.hostname || 'localhost';
-  const embyPort = 8097;
   const isLocalOrIp = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.)/.test(currentHost) || /^[0-9.]+$/.test(currentHost);
 
-  // 默认自适应当前访问主机的 8097 端口
+  // 默认本地模式
   let displayHost = currentHost;
-  let displayAddress = `http://${currentHost}:${embyPort}`;
+  let displayProtocol = 'http://';
+  let displayPort = '8097';
 
   try {
     const res = await fetch('/api/info');
     const json = await res.json();
     if (json.success && json.data) {
       const data = json.data;
-      const port = (data.ports && data.ports.emby) || embyPort;
       if (data.domain && data.domain !== 'localhost' && !isLocalOrIp) {
+        // 真实域名：使用 HTTPS 模式，端口 443
         displayHost = data.domain.startsWith('emby.') ? data.domain : `emby.${data.domain}`;
-        displayAddress = `http://${displayHost}:${port}`;
+        displayProtocol = 'https://';
+        displayPort = '443';
       } else {
-        displayAddress = `http://${currentHost}:${port}`;
+        // 本地 / IP 模式：HTTP + 实际端口
+        const port = (data.ports && data.ports.emby) || 8097;
+        displayHost = currentHost;
+        displayProtocol = 'http://';
+        displayPort = String(port);
       }
     }
   } catch (e) { }
 
-  if (document.getElementById('embyServerAddress')) {
-    document.getElementById('embyServerAddress').innerText = displayAddress;
-  }
-  if (document.getElementById('embyHostOnly')) {
-    document.getElementById('embyHostOnly').innerText = displayHost;
-  }
+  const hostEl     = document.getElementById('embyHostOnly');
+  const protoEl    = document.getElementById('embyProtocolDisplay');
+  const portEl     = document.getElementById('embyPortDisplay');
+
+  if (hostEl)  hostEl.innerText  = displayHost;
+  if (protoEl) protoEl.innerText = displayProtocol;
+  if (portEl)  portEl.innerText  = displayPort;
+
+  // 兼容旧字段（如果页面中还有 embyServerAddress 元素）
+  const addrEl = document.getElementById('embyServerAddress');
+  if (addrEl) addrEl.innerText = `${displayProtocol}${displayHost}:${displayPort}`;
 }
 
 // 1.1 获取注册状态与名额
@@ -469,13 +479,21 @@ async function submitManualCookie() {
   }
 }
 
-// 5. 复制地址
+// 5. 复制地址（仅复制主机名，不含协议前缀）
 function copyServerAddress() {
-  const text = document.getElementById('embyServerAddress').innerText;
+  const hostEl = document.getElementById('embyHostOnly');
+  const text = hostEl ? hostEl.innerText.trim() : '';
+  if (!text) return;
   navigator.clipboard.writeText(text).then(() => {
-    alert('已成功复制 Emby 代理地址到剪贴板！');
+    const btn = document.querySelector('.copy-btn');
+    if (btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="ri-check-line"></i> 已复制';
+      btn.style.color = '#34d399';
+      setTimeout(() => { btn.innerHTML = orig; btn.style.color = ''; }, 2000);
+    }
   }).catch(() => {
-    prompt('请长按或复制以下地址:', text);
+    prompt('请手动复制以下主机地址:', text);
   });
 }
 

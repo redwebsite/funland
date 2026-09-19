@@ -55,7 +55,7 @@
             <i class="ri-cpu-line"></i>
           </div>
           <div class="micro-card-body">
-            <div class="micro-card-title">全客户端透明兼容</div>
+            <div class="micro-card-title">主流客户端兼容</div>
           </div>
         </div>
 
@@ -73,7 +73,7 @@
             <i class="ri-shield-star-line"></i>
           </div>
           <div class="micro-card-body">
-            <div class="micro-card-title">三级风险隔离机制</div>
+            <div class="micro-card-title">三级风险强隔离</div>
           </div>
         </div>
 
@@ -82,7 +82,7 @@
             <i class="ri-timer-flash-line"></i>
           </div>
           <div class="micro-card-body">
-            <div class="micro-card-title">30 min 滑动缓存续期</div>
+            <div class="micro-card-title">30 min 滑动缓存</div>
           </div>
         </div>
       </div>
@@ -99,7 +99,7 @@
           <div class="box-header">
             <div>
               <h2 class="box-title">
-                <i class="ri-phone-line"></i> 绑定你的 115 网盘
+                <i class="ri-phone-line"></i> 绑定 115 网盘
               </h2>
               <p class="box-desc">扫码或粘贴 Cookie，让 Funland 替你拿到直链</p>
             </div>
@@ -145,9 +145,9 @@
         <!-- 状态 B: 已绑定 → 网盘设置 -->
         <div id="boxDriveSettings" class="drive-settings-panel" style="display: none;">
           <div class="drive-settings-header">
-            <h2 class="box-title" style="margin-bottom:0;">
-              <i class="ri-hard-drive-2-line"></i> 我的 115 网盘
-            </h2>
+              <h2 class="box-title" style="margin-bottom:0;">
+                <i class="ri-hard-drive-2-line"></i> 我的 115 网盘
+              </h2>
             <button class="btn-save-disk" onclick="saveDriveSettings()" title="保存设置">
               <i class="ri-save-line"></i>
             </button>
@@ -198,20 +198,22 @@
         <div class="server-addr-card">
           <div class="server-addr-label">
             <i class="ri-server-line"></i>
-            <span>Emby 代理服务器地址</span>
+            <span>Emby 代理服务器</span>
           </div>
-          <div class="server-addr-value" id="embyServerAddress">http://localhost:8097</div>
           <div class="server-addr-meta">
-            <div class="server-meta-chip">
-              <span class="chip-label">Host</span>
-              <strong id="embyHostOnly">localhost</strong>
+            <div class="server-meta-chip" style="flex:1; min-width:0;">
+              <span class="chip-label">地址 (Host)</span>
+              <div style="display:flex; align-items:baseline; gap:2px; min-width:0; flex-wrap:wrap;">
+                <span id="embyProtocolDisplay" style="color:var(--text-muted); font-size:0.78rem; flex-shrink:0;">https://</span>
+                <strong id="embyHostOnly" style="word-break:break-all;">emby.funland.us.ci</strong>
+              </div>
             </div>
-            <div class="server-meta-chip">
-              <span class="chip-label">Port</span>
-              <strong style="color: #34d399;">8097</strong>
+            <div class="server-meta-chip" style="flex-shrink:0;">
+              <span class="chip-label">端口 (Port)</span>
+              <strong id="embyPortDisplay" style="color: #34d399;">443</strong>
             </div>
-            <button class="copy-btn" onclick="copyServerAddress()">
-              <i class="ri-clipboard-line"></i> 复制
+            <button class="copy-btn" onclick="copyServerAddress()" style="flex-shrink:0;">
+              <i class="ri-clipboard-line"></i> 复制地址
             </button>
           </div>
         </div>
