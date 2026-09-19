@@ -87,8 +87,11 @@ router.post('/user/register', async (req, res) => {
   }
 
   const { username, password } = req.body;
-  if (!username || !password || username.trim().length < 3 || password.trim().length < 6) {
-    return res.status(400).json({ success: false, error: '用户名须至少3位，密码须至少6位' });
+  if (!username || !username.trim()) {
+    return res.status(400).json({ success: false, error: '请输入有效的用户名' });
+  }
+  if (!password || password.trim().length < 6) {
+    return res.status(400).json({ success: false, error: '新账号注册时密码须至少6位' });
   }
 
   const cleanUsername = username.trim();

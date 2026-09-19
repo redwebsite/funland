@@ -155,8 +155,8 @@ function switchAuthTab(mode) {
     if (tabLogin) tabLogin.classList.remove('active');
 
     if (inputUsername) {
-      inputUsername.placeholder = '至少 3 位字母或数字';
-      inputUsername.setAttribute('minlength', '3');
+      inputUsername.placeholder = '请输入用户名 (支持数字/字母/中文)';
+      inputUsername.removeAttribute('minlength');
     }
     if (inputPassword) {
       inputPassword.placeholder = '至少 6 位密码';
@@ -189,8 +189,8 @@ async function handleAuthSubmit(e) {
   const password = document.getElementById('authPassword').value;
 
   if (currentAuthMode === 'register') {
-    if (!username || username.length < 3) {
-      alert('注册时用户名须至少 3 位字母或数字');
+    if (!username || username.length < 1) {
+      alert('请输入有效的用户名');
       return;
     }
     if (!password || password.length < 6) {
