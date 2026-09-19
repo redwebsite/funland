@@ -536,19 +536,33 @@ class OpenApi115 {
         postParams.append('user_id', receiverUid);
       }
 
-      const receiveRes = await this.http.post(
-        'https://webapi.115.com/share/receive',
-        postParams.toString(),
-        {
-          headers: {
-            Cookie: receiverCookie,
-            Referer: 'https://115.com/',
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': USER_AGENT
-          },
-          timeout: 8000
+      const doReceive = async () => {
+        return await this.http.post(
+          'https://webapi.115.com/share/receive',
+          postParams.toString(),
+          {
+            headers: {
+              Cookie: receiverCookie,
+              Referer: 'https://115.com/',
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': USER_AGENT
+            },
+            timeout: 8000
+          }
+        );
+      };
+
+      let receiveRes = await doReceive();
+
+      // 若遇 115 后台正在生成文件快照，自动等待 1.8 秒后重试接收
+      if (!receiveRes.data || !receiveRes.data.state) {
+        const errMsg = receiveRes.data ? (receiveRes.data.msg || receiveRes.data.error || '') : '';
+        if (errMsg.includes('快照') || errMsg.includes('生成文件快照')) {
+          console.log(`⏳ [115] 115 正在生成文件快照，等待 1.8 秒后自动重试接收...`);
+          await new Promise(r => setTimeout(r, 1800));
+          receiveRes = await doReceive();
         }
-      );
+      }
 
       if (!receiveRes.data || !receiveRes.data.state) {
         const errCode = receiveRes.data && (receiveRes.data.errno || receiveRes.data.code);
@@ -560,20 +574,21 @@ class OpenApi115 {
         }
       }
 
-      // 3. 转存成功后，从小号目标目录或搜索获取新生成的文件 pickcode
+      // 3. 转存成功后，从小号目标目录获取新生成文件的 pickcode
       let newPickcode = '';
       let newFileId = '';
 
       const checkTargetDir = async () => {
         try {
-          const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=30&format=json&o=user_ptime&asc=0`;
+          // 扩大 limit 到 100，确保在已有文件较多时也能精准检索到刚转存的文件
+          const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=100&format=json&o=user_ptime&asc=0`;
           const listRes = await this.http.get(listUrl, {
             headers: {
               Cookie: receiverCookie,
               Referer: 'https://115.com/',
               'User-Agent': USER_AGENT
             },
-            timeout: 5000
+            timeout: 6000
           });
 
           if (listRes.data && listRes.data.state && Array.isArray(listRes.data.data) && listRes.data.data.length > 0) {
@@ -609,19 +624,20 @@ class OpenApi115 {
         return null;
       };
 
-      let dirHit = await checkTargetDir();
-      if (!dirHit) {
-        // 等待 800ms 以应对 115 目录落盘的最终一致性延迟
-        await new Promise(r => setTimeout(r, 800));
-        dirHit = await checkTargetDir();
+      // 渐进式智能轮询：115 接收转存后落盘通常需要 1~3 秒
+      // 分别在 600ms, 1200ms, 1800ms, 2500ms 尝试，只要落盘立即返回
+      const pollDelays = [600, 1200, 1800, 2500];
+      for (const delay of pollDelays) {
+        await new Promise(r => setTimeout(r, delay));
+        const dirHit = await checkTargetDir();
+        if (dirHit) {
+          newPickcode = dirHit.pc;
+          newFileId = dirHit.fid;
+          break;
+        }
       }
 
-      if (dirHit) {
-        newPickcode = dirHit.pc;
-        newFileId = dirHit.fid;
-      }
-
-      // 若目录列出未拿到，备用按文件名在小号盘内严格检索
+      // 若指定 cid 目录内仍未拿到，尝试按文件名在小号全盘内严格检索
       if (!newPickcode && filename) {
         const search = await this.searchUserDrive(receiverCookie, filename);
         if (search.found && search.pickcode) {
