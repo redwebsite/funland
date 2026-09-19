@@ -52,8 +52,17 @@ function createEmbyMiddleware() {
         // 若为 .strm 文件，清洗掉后缀以匹配 115 网盘上的真实视频名
         filename = filename.replace(/\.strm$/i, '');
 
-        // 如果是剧集且未获取到独立文件名，组合剧集名与单集名进行精准搜索
-        if (item.SeriesName && (!filePath || filename === item.Name)) {
+        // 关键清洗：若 filename 是 redirect_url 或包含参数，回退为真实的 Emby 影视标准名
+        if (!filename || filename.includes('redirect_url') || filename.includes('pickcode=') || filename.startsWith('http')) {
+          if (item.SeriesName) {
+            const epIndex = item.IndexNumber ? `E${String(item.IndexNumber).padStart(2, '0')}` : '';
+            const sIndex = item.ParentIndexNumber ? `S${String(item.ParentIndexNumber).padStart(2, '0')}` : '';
+            const sePrefix = sIndex || epIndex ? `${sIndex}${epIndex}` : '';
+            filename = [item.SeriesName, sePrefix, item.Name].filter(Boolean).join(' ');
+          } else {
+            filename = item.Name || `Item-${itemId}`;
+          }
+        } else if (item.SeriesName && (!filePath || filename === item.Name)) {
           filename = `${item.SeriesName} ${item.Name}`;
         }
 
@@ -152,14 +161,13 @@ function createEmbyMiddleware() {
     let sourceFilename = (fileInfo && fileInfo.filename) || (mediaMetadata ? mediaMetadata.filename : '');
     let sourceSize = (fileInfo && fileInfo.filesize) || (mediaMetadata ? mediaMetadata.size : 0);
 
-    // 若本地索引尚未收录该文件的完整 SHA1 或 fileId，利用源盘直链接口快速探测指纹 (仅供沉淀索引与跨号秒传使用，绝不发送给小号客户端播放)
-    if ((!sourceSha1 || !sourceFileId) && sourcePickcode) {
+    // 若本地索引尚未收录该文件的完整 SHA1 或真实文件名，利用源盘直链接口快速探测指纹 (仅供沉淀索引与跨号秒传使用，绝不发送给小号客户端播放)
+    if ((!sourceSha1 || !sourceFilename || sourceFilename.includes('redirect_url')) && sourcePickcode) {
       try {
         const probe = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
         if (probe && probe.success) {
           if (probe.sha1 && !sourceSha1) sourceSha1 = probe.sha1;
-          if (probe.fileId && !sourceFileId) sourceFileId = probe.fileId;
-          if (probe.filename && !sourceFilename) sourceFilename = probe.filename;
+          if (probe.filename && (!sourceFilename || sourceFilename.includes('redirect_url'))) sourceFilename = probe.filename;
           dbService.recordFileIndex(sourceSha1 || `SHA1_${sourcePickcode}`, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
         }
       } catch (e) {}
@@ -189,35 +197,24 @@ function createEmbyMiddleware() {
         }
       }
 
-      // 2. 尝试用 sourcePickcode 直接以小号 Cookie 解析 (若小号恰好拥有同源文件)
-      if (!resolvedDirectUrl && sourcePickcode) {
-        const linkRes = await openApi115.getUserDirectLink(userCookie, sourcePickcode, sourceFileId, clientUa);
-        if (linkRes.success) {
-          resolvedDirectUrl = linkRes.downloadUrl;
-          resolvedUid = linkRes.uid;
-          accelerationModeUsed = 'STEP1_OWN_PICKCODE';
-          console.log(`✅ [Step 1 命中] 小号直接持有该 Pickcode 资源，小号直链签发成功 (UID: ${resolvedUid})`);
-          if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, sourcePickcode, sourceFileId);
-        }
-      }
-
-      // 3. 在小号网盘全局搜索同名媒体文件
-      if (!resolvedDirectUrl && sourceFilename) {
-        const searchRes = await openApi115.searchUserDrive(userCookie, sourceFilename);
-        if (searchRes.found && searchRes.pickcode) {
-          console.log(`🎯 [Step 1 搜索命中] 在小号网盘匹配到已存文件: "${searchRes.filename}" (Pickcode: ${searchRes.pickcode})`);
-          const linkRes = await openApi115.getUserDirectLink(userCookie, searchRes.pickcode, searchRes.fileId, clientUa);
+      // 2. 检查小号网盘中是否已直接持有该资源 (通过 pickcode 或已存文件名定位真实 file_id，绝不张冠李戴)
+      if (!resolvedDirectUrl) {
+        const ownResolved = await openApi115.resolveFileOnCookie(userCookie, sourcePickcode, sourceFilename, sourceSha1);
+        if (ownResolved.found && ownResolved.pickcode) {
+          console.log(`🎯 [Step 1 搜索命中] 在小号网盘匹配到已存文件: "${ownResolved.filename}" (Pickcode: ${ownResolved.pickcode})`);
+          const linkRes = ownResolved.downloadUrl ? { success: true, downloadUrl: ownResolved.downloadUrl, uid: ownResolved.uid }
+                                                 : await openApi115.getUserDirectLink(userCookie, ownResolved.pickcode, ownResolved.fileId, clientUa);
           if (linkRes.success) {
             resolvedDirectUrl = linkRes.downloadUrl;
             resolvedUid = linkRes.uid;
-            accelerationModeUsed = 'STEP1_OWN_SEARCH';
+            accelerationModeUsed = 'STEP1_OWN_DRIVE';
             console.log(`✅ [Step 1 命中] 由用户 ${currentUserName} 自有 Cookie 签发直链播放 (UID: ${resolvedUid})`);
-            if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, searchRes.pickcode, searchRes.fileId);
+            if (sourceSha1 && currentUser) dbService.recordUserFile(currentUser.id, sourceSha1, ownResolved.pickcode, ownResolved.fileId);
           }
         }
       }
 
-      // 4. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】
+      // 3. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】
       if (!resolvedDirectUrl) {
         console.log(`📦 [Step 2 秒传转存] 小号未持有 "${sourceFilename || itemId}"，开始秒传转存至小号秒存目录...`);
 
@@ -231,7 +228,7 @@ function createEmbyMiddleware() {
           }
         }
 
-        // 4.1 优先分布式秒传 (P2P 用户间转存，完全不碰大号源盘)
+        // 3.1 优先分布式秒传 (P2P 用户间转存，完全不碰大号源盘)
         if (sourceSha1 && currentUser) {
           const peerUser = dbService.findRecentPeerWithFile(sourceSha1, currentUser.id);
           if (peerUser && peerUser.cookie_115 && (peerUser.file_id || sourceFileId)) {
@@ -256,35 +253,45 @@ function createEmbyMiddleware() {
           }
         }
 
-        // 4.2 若 P2P 未命中，通过源网盘 Cookie 池秒传转存至小号
-        if (!resolvedDirectUrl && sourceFileId) {
-          const sourceCookieObj = dbService.getActiveSourceCookie();
-          if (sourceCookieObj && sourceCookieObj.cookie) {
-            console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name || 'Master'}) 秒传转存至小号目录 (${targetCid})...`);
-            dbService.updateCookieUsed(sourceCookieObj.id);
+        // 3.2 若 P2P 未命中，通过源网盘 Cookie 池秒传转存至小号 (逐一寻源确保持有真实 file_id)
+        if (!resolvedDirectUrl) {
+          const activeCookies = dbService.getAllCookiePool().filter(c => c.status === 'active');
+          if (activeCookies.length > 0) {
+            for (const sourceCookieObj of activeCookies) {
+              console.log(`🔍 [Step 3 寻源] 在源网盘 (${sourceCookieObj.name || 'Master'}) 中精确定位真实文件...`);
+              const resolvedSource = await openApi115.resolveFileOnCookie(sourceCookieObj.cookie, sourcePickcode, sourceFilename, sourceSha1);
+              if (resolvedSource.found && resolvedSource.fileId) {
+                console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name}) 执行秒传转存至小号目录 (${targetCid})... (FileId: ${resolvedSource.fileId}, Name: "${resolvedSource.filename}")`);
+                dbService.updateCookieUsed(sourceCookieObj.id);
 
-            const transferRes = await openApi115.shareAndReceiveFile(
-              sourceCookieObj.cookie,
-              userCookie,
-              sourceFileId,
-              targetCid,
-              sourceFilename
-            );
+                const transferRes = await openApi115.shareAndReceiveFile(
+                  sourceCookieObj.cookie,
+                  userCookie,
+                  resolvedSource.fileId,
+                  targetCid,
+                  sourceFilename
+                );
 
-            if (transferRes.success && transferRes.pickcode) {
-              const linkRes = await openApi115.getUserDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
-              if (linkRes.success) {
-                resolvedDirectUrl = linkRes.downloadUrl;
-                resolvedUid = linkRes.uid;
-                accelerationModeUsed = 'STEP3_SOURCE_TRANSFERRED';
-                console.log(`🎉 [Step 3 转存成功] 文件已落库小号秒存目录！直链由小号 Cookie 签发 (UID: ${resolvedUid})，大号风险0`);
-                if (sourceSha1 && currentUser) {
-                  dbService.recordUserFile(currentUser.id, sourceSha1, transferRes.pickcode, transferRes.fileId);
-                  dbService.recordFileUser(sourceSha1, currentUser.id);
+                if (transferRes.success && transferRes.pickcode) {
+                  const linkRes = await openApi115.getUserDirectLink(userCookie, transferRes.pickcode, transferRes.fileId, clientUa);
+                  if (linkRes.success) {
+                    resolvedDirectUrl = linkRes.downloadUrl;
+                    resolvedUid = linkRes.uid;
+                    accelerationModeUsed = 'STEP3_SOURCE_TRANSFERRED';
+                    console.log(`🎉 [Step 3 转存成功] 文件已落库小号秒存目录！直链由小号 Cookie 签发 (UID: ${resolvedUid})，大号风险0`);
+                    if (sourceSha1 && currentUser) {
+                      dbService.recordUserFile(currentUser.id, sourceSha1, transferRes.pickcode, transferRes.fileId);
+                      dbService.recordFileUser(sourceSha1, currentUser.id);
+                    }
+                    break;
+                  }
+                } else {
+                  console.warn(`⚠️ [Step 3] 源网盘 (${sourceCookieObj.name}) 秒传转存失败: ${transferRes.error}`);
                 }
               }
-            } else {
-              console.warn(`⚠️ [Step 3] 源网盘秒传转存失败: ${transferRes.error}`);
+            }
+            if (!resolvedDirectUrl) {
+              console.warn(`ℹ️ [Step 3] Cookie 池中所有账号均未直接持有该文件 ("${sourceFilename || sourcePickcode}")，无法执行跨号转存`);
             }
           } else {
             console.warn(`ℹ️ [Step 3] 源网盘 Cookie 资源池暂无活跃账号，无法执行跨号秒传转存`);
@@ -356,6 +363,45 @@ function createEmbyMiddleware() {
     return next();
   }
 
+  // 核心优化：全量拦截 Sessions/Playing 会话报告接口实行 <1ms Fast-Ack 闪电响应 (204 No Content)
+  // 背景：Forward、Rex、Infuse 等基于 iOS/macOS 框架的播放器在开始/停止播放或心跳时会频繁调用 Sessions/Playing*，
+  // 并在本地线程通过 SQLite (如 WCDB) 同步写入事务记录。若上游 Emby 处于海外或网络高延迟（800ms+），
+  // 客户端等待响应期间若用户将窗口退至后台或切应用，macOS RunningBoard 会因检测到后台挂起进程持有 SQLite 锁而强制 SIGKILL (0xdead10cc)。
+  // Funland 在 <1ms 内秒回 204 解除客户端死等，让其瞬间释放本地事务与数据库锁；同时在后台异步静默透传给上游 Emby，确保服务端观影进度正常沉淀！
+  router.use((req, res, next) => {
+    const cleanPath = (req.path || '').replace(/\/+$/, '');
+    if (/^(?:\/emby)?\/sessions\/playing(?:\/(?:stopped|progress|ping))?$/i.test(cleanPath)) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Connection', 'close');
+      res.status(204).end();
+
+      // 后台异步静默转发至真实上游 Emby 服务器
+      const base = upstreamUrl().replace(/\/+$/, '');
+      let reqPath = req.originalUrl || req.url;
+      if (!reqPath.startsWith('/emby') && !base.endsWith('/emby')) {
+        reqPath = '/emby' + (reqPath.startsWith('/') ? reqPath : '/' + reqPath);
+      }
+      const targetUrl = `${base}${reqPath}`;
+
+      const forwardHeaders = { ...req.headers };
+      delete forwardHeaders.host;
+      delete forwardHeaders['content-length'];
+
+      axios({
+        method: req.method,
+        url: targetUrl,
+        data: req.body && req.body.length > 0 ? req.body : undefined,
+        headers: forwardHeaders,
+        timeout: 8000,
+        httpsAgent
+      }).catch(() => {});
+      return;
+    }
+    next();
+  });
+
   // 智能捕获客户端 Emby 用户 Token 与 UserId 的映射
   router.use((req, res, next) => {
     const token = req.query.api_key || req.headers['x-emby-token'] || req.query['X-Emby-Token'];
@@ -397,44 +443,6 @@ function createEmbyMiddleware() {
     next();
   });
 
-  // 核心优化：针对 Sessions/Playing/Stopped 等会话报告接口实行 Fast-Ack 闪电响应 (204 No Content)
-  // 背景：Forward、Rex、Infuse 等移动端/iPad 架构播放器在停止播放时会向服务端上报 Stopped，
-  // 并在本地线程通过 SQLite (如 WCDB) 写入播放记录。若上游 Emby 处于海外或网络高延迟（800ms+），
-  // 客户端等待响应期间若用户将窗口置于后台或切换应用，macOS RunningBoard 守护进程会因检测到后台挂起进程持有 SQLite 锁而强制 SIGKILL (0xdead10cc)。
-  // Funland 在 <1ms 内秒回 204 解除客户端死等，让其瞬间释放本地事务与数据库锁；同时在后台异步静默透传给上游 Emby，确保服务端进度同步记录！
-  const SESSION_FAST_ACK_REGEX = /^(?:\/emby)?\/sessions\/playing\/(stopped|progress|ping)$/i;
-
-  router.post(SESSION_FAST_ACK_REGEX, express.raw({ type: '*/*' }), (req, res) => {
-    // 1. 立即返回 204 No Content
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.status(204).end();
-
-    // 2. 后台异步转发至真实上游 Emby 服务器
-    const base = upstreamUrl().replace(/\/+$/, '');
-    let reqPath = req.originalUrl || req.url;
-    if (!reqPath.startsWith('/emby') && !base.endsWith('/emby')) {
-      reqPath = '/emby' + (reqPath.startsWith('/') ? reqPath : '/' + reqPath);
-    }
-    const targetUrl = `${base}${reqPath}`;
-
-    const forwardHeaders = { ...req.headers };
-    delete forwardHeaders.host;
-    delete forwardHeaders['content-length'];
-
-    axios({
-      method: 'POST',
-      url: targetUrl,
-      data: req.body && req.body.length > 0 ? req.body : undefined,
-      headers: forwardHeaders,
-      timeout: 8000,
-      httpsAgent
-    }).catch(err => {
-      console.warn(`[Emby Proxy] 后台异步同步 ${req.path} 失败: ${err.message}`);
-    });
-  });
-
   // 透明代理所有其他 Emby 请求（元数据、列表、海报、登录认证、系统接口）
   const proxyHandler = createProxyMiddleware({
     router: () => upstreamUrl(),
@@ -445,6 +453,10 @@ function createEmbyMiddleware() {
     logger: console,
     on: {
       error: (err, req, res) => {
+        // 客户端主动中断连接（如停止播放、关闭窗口、切换前后台），属于正常网络行为，静默处理
+        if (err.code === 'ECONNRESET' || err.code === 'EPIPE' || (err.message && err.message.includes('aborted'))) {
+          return;
+        }
         console.error(`[Emby Proxy Error] 代理至上游异常 (${req.url}):`, err.message);
         if (!res.headersSent) {
           res.status(502).json({

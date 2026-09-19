@@ -180,7 +180,7 @@ class OpenApi115 {
   }
 
   /**
-   * 5. 源网盘直链/元数据解析助手 (仅供提取 SHA1/文件名/file_id 等指纹，或管理员明确开启大号兜底时使用)
+   * 5. 源网盘直链/元数据解析助手 (仅供提取 SHA1/真实文件名 等指纹，或管理员明确开启大号兜底时使用)
    */
   async getSourceDirectLink(pickcode, clientUserAgent = '') {
     if (!pickcode) return { success: false, error: '缺少 pickcode' };
@@ -198,17 +198,26 @@ class OpenApi115 {
       const location = (res.status >= 300 && res.status < 400 && res.headers.location) ? res.headers.location : null;
       if (location) {
         const sha1Match = location.match(/115cdn\.net\/([a-f0-9]{40})\//i);
-        const fidMatch = location.match(/d=vip-(\d+)-/i);
         const uMatch = location.match(/[?&]u=(\d+)/);
-        const urlSegments = location.split('?')[0].split('/');
-        const encodedName = urlSegments[urlSegments.length - 1];
-        const realFilename = encodedName ? decodeURIComponent(encodedName) : '';
+        const cdHeader = (res.headers && res.headers['content-disposition']) || '';
+        let realFilename = '';
+        if (cdHeader) {
+          const cdMatch = cdHeader.match(/filename\*=UTF-8''([^;]+)/i) || cdHeader.match(/filename="?([^";]+)"?/i);
+          if (cdMatch) {
+            try { realFilename = decodeURIComponent(cdMatch[1]); } catch (e) { realFilename = cdMatch[1]; }
+          }
+        }
+        if (!realFilename) {
+          const urlSegments = location.split('?')[0].split('/');
+          const encodedName = urlSegments[urlSegments.length - 1];
+          try { realFilename = encodedName ? decodeURIComponent(encodedName) : ''; } catch (e) { realFilename = encodedName; }
+        }
 
         return {
           success: true,
           downloadUrl: location,
           sha1: sha1Match ? sha1Match[1] : '',
-          fileId: fidMatch ? fidMatch[1] : '',
+          fileId: '', // 注意：CDN URL 中的 vip-xxxx- 不是网盘内的真实 file_id，置空交由 resolveFileOnCookie 解析
           filename: realFilename,
           uid: uMatch ? uMatch[1] : '',
           pickcode
@@ -218,17 +227,26 @@ class OpenApi115 {
       if (e.response && e.response.headers && e.response.headers.location) {
         const location = e.response.headers.location;
         const sha1Match = location.match(/115cdn\.net\/([a-f0-9]{40})\//i);
-        const fidMatch = location.match(/d=vip-(\d+)-/i);
         const uMatch = location.match(/[?&]u=(\d+)/);
-        const urlSegments = location.split('?')[0].split('/');
-        const encodedName = urlSegments[urlSegments.length - 1];
-        const realFilename = encodedName ? decodeURIComponent(encodedName) : '';
+        const cdHeader = (e.response.headers && e.response.headers['content-disposition']) || '';
+        let realFilename = '';
+        if (cdHeader) {
+          const cdMatch = cdHeader.match(/filename\*=UTF-8''([^;]+)/i) || cdHeader.match(/filename="?([^";]+)"?/i);
+          if (cdMatch) {
+            try { realFilename = decodeURIComponent(cdMatch[1]); } catch (err) { realFilename = cdMatch[1]; }
+          }
+        }
+        if (!realFilename) {
+          const urlSegments = location.split('?')[0].split('/');
+          const encodedName = urlSegments[urlSegments.length - 1];
+          try { realFilename = encodedName ? decodeURIComponent(encodedName) : ''; } catch (err) { realFilename = encodedName; }
+        }
 
         return {
           success: true,
           downloadUrl: location,
           sha1: sha1Match ? sha1Match[1] : '',
-          fileId: fidMatch ? fidMatch[1] : '',
+          fileId: '',
           filename: realFilename,
           uid: uMatch ? uMatch[1] : '',
           pickcode
@@ -397,21 +415,42 @@ class OpenApi115 {
   }
 
   /**
-   * 6. 在指定用户的网盘中根据 SHA1 或文件名查询文件
+   * 6. 在指定用户的网盘中根据关键词或文件名智能查询文件 (严格关键词过滤，杜绝张冠李戴)
    */
   async searchUserDrive(cookie, query) {
     if (!cookie || !query) return { found: false };
 
-    // 生成搜索候选词：优先原始关键词，其次去除特殊符号与扩展名的纯净关键词
-    const cleanQuery = query.replace(/\.[a-zA-Z0-9]+$/, '').replace(/[:：_\-\[\]\(\)]+/g, ' ').trim();
-    const candidateQueries = [query];
-    if (cleanQuery && cleanQuery !== query && !candidateQueries.includes(cleanQuery)) {
-      candidateQueries.push(cleanQuery);
+    // 过滤异常查询：若为 redirect_url 或仅有 pickcode 参数，不执行网盘搜索
+    if (query.includes('redirect_url') || query.includes('pickcode=') || query.startsWith('http')) {
+      return { found: false };
     }
+
+    // 清洗提取纯净标题与核心关键词
+    const cleanQuery = query
+      .replace(/\.[a-zA-Z0-9]+$/, '')
+      .replace(/\((?:19|20)\d{2}\)/g, ' ')
+      .replace(/\b(?:2160p|1080p|720p|4k|remux|web-dl|hdr|dovi|dv|h265|x265|hevc|aac|ddp\d(?:\.\d)?)\b/gi, ' ')
+      .replace(/[:：_\-\[\]\(\)]+/g, ' ')
+      .trim();
+
+    const candidateQueries = [];
+    if (cleanQuery && cleanQuery.length >= 2) candidateQueries.push(cleanQuery);
     const mainTitle = cleanQuery.split(/\s+/)[0];
     if (mainTitle && mainTitle.length >= 2 && !candidateQueries.includes(mainTitle)) {
       candidateQueries.push(mainTitle);
     }
+    if (query !== cleanQuery && !candidateQueries.includes(query)) {
+      candidateQueries.push(query);
+    }
+
+    // 校验候选文件名是否真实命中目标标题（防止 115 模糊检索出毫无关联的文件）
+    const isTargetMatch = (itemName, targetTitle) => {
+      if (!itemName || !targetTitle) return false;
+      const normalize = s => s.toLowerCase().replace(/[:：_\-\s\[\]\(\)\.]+/g, '');
+      const itemNorm = normalize(itemName);
+      const titleNorm = normalize(targetTitle);
+      return itemNorm.includes(titleNorm) || titleNorm.includes(itemNorm);
+    };
 
     for (const q of candidateQueries) {
       try {
@@ -426,21 +465,84 @@ class OpenApi115 {
         });
 
         if (res.data && res.data.state && res.data.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          // 优先寻找视频文件（过滤非视频类型，优先含 pickcode 的文件）
-          const videoItem = res.data.data.find(item => item.pc && (item.sha1 || item.sha || item.s > 0)) || res.data.data[0];
-          if (videoItem && videoItem.pc) {
+          // 严格匹配：候选文件必须包含当前搜索核心标题或原始主标题，避免无关文件干扰
+          const matchedItem = res.data.data.find(item => {
+            if (!item.pc) return false;
+            return isTargetMatch(item.n, mainTitle || cleanQuery);
+          });
+
+          if (matchedItem && matchedItem.pc) {
             return {
               found: true,
-              pickcode: videoItem.pc,
-              fileId: videoItem.fid,
-              filename: videoItem.n,
-              filesize: videoItem.s,
-              sha1: videoItem.sha1 || videoItem.sha
+              pickcode: matchedItem.pc,
+              fileId: matchedItem.fid,
+              filename: matchedItem.n,
+              filesize: matchedItem.s,
+              sha1: matchedItem.sha1 || matchedItem.sha
             };
           }
         }
       } catch (e) {
         // 单个查询异常则尝试下一个候选词
+      }
+    }
+
+    return { found: false };
+  }
+
+  /**
+   * 在指定 115 账号中定位文件，获取该账号下真实的 file_id 与 pickcode
+   */
+  async resolveFileOnCookie(cookie, pickcode = '', filename = '', sha1 = '') {
+    if (!cookie) return { found: false };
+
+    // 1. 若有 pickcode，优先通过 downurl 探测该账号是否直接拥有该文件 (100% 准确提取该账号所属真实 file_id)
+    if (pickcode) {
+      try {
+        const url = `https://proapi.115.com/app/chrome/downurl?pickcode=${pickcode}`;
+        const res = await this.http.get(url, {
+          headers: {
+            Cookie: cookie,
+            Referer: 'https://115.com/',
+            'User-Agent': USER_AGENT
+          },
+          timeout: 4000
+        });
+
+        if (res.data && res.data.state && res.data.data) {
+          const keys = Object.keys(res.data.data);
+          if (keys.length > 0) {
+            const fid = keys[0];
+            const fileObj = res.data.data[fid];
+            if (fileObj && fileObj.url && fileObj.url.url) {
+              const uMatch = fileObj.url.url.match(/[?&]u=(\d+)/);
+              return {
+                found: true,
+                fileId: fid,
+                pickcode: fileObj.pick_code || pickcode,
+                filename: fileObj.file_name || filename,
+                filesize: fileObj.file_size || 0,
+                downloadUrl: fileObj.url.url,
+                uid: uMatch ? uMatch[1] : ''
+              };
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 2. 若 pickcode 未直接命中，通过有效文件名在指定账号网盘中精确搜索匹配真实 file_id
+    if (filename && !filename.includes('redirect_url') && !filename.includes('pickcode=')) {
+      const searchRes = await this.searchUserDrive(cookie, filename);
+      if (searchRes.found && searchRes.fileId) {
+        return {
+          found: true,
+          fileId: searchRes.fileId,
+          pickcode: searchRes.pickcode,
+          filename: searchRes.filename || filename,
+          filesize: searchRes.filesize || 0,
+          sha1: searchRes.sha1 || sha1
+        };
       }
     }
 
