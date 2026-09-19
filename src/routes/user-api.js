@@ -134,15 +134,16 @@ router.post('/user/register', async (req, res) => {
   });
 });
 
-// 1.3 用户登录接口 (支持本地密码与 Emby 上游密码穿透认证)
+// 1.3 用户登录接口 (支持本地密码与 Emby 上游密码穿透认证，全面兼容任意长度及无密码 Emby 用户)
 router.post('/user/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: '请输入用户名和密码' });
+  const { username } = req.body;
+  const rawPassword = req.body.password != null ? String(req.body.password) : '';
+  if (!username || !username.trim()) {
+    return res.status(400).json({ success: false, error: '请输入用户名' });
   }
 
   const cleanUsername = username.trim();
-  const cleanPassword = password.trim();
+  const cleanPassword = rawPassword;
   const crypto = require('crypto');
   const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
 

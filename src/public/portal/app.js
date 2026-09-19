@@ -130,6 +130,9 @@ function switchAuthTab(mode) {
   const regClosedSection = document.getElementById('regClosedSection');
   const authFieldsGroup = document.getElementById('authFieldsGroup');
 
+  const inputUsername = document.getElementById('authUsername');
+  const inputPassword = document.getElementById('authPassword');
+
   if (mode === 'login') {
     if (tabLogin) tabLogin.classList.add('active');
     if (tabReg) tabReg.classList.remove('active');
@@ -137,9 +140,29 @@ function switchAuthTab(mode) {
     if (regClosedSection) regClosedSection.style.display = 'none';
     if (authFieldsGroup) authFieldsGroup.style.display = 'block';
     if (submitBtn) submitBtn.innerText = '立即登录';
+
+    if (inputUsername) {
+      inputUsername.placeholder = '请输入用户名';
+      inputUsername.removeAttribute('minlength');
+    }
+    if (inputPassword) {
+      inputPassword.placeholder = '请输入密码 (若 Emby 无密码可留空)';
+      inputPassword.removeAttribute('required');
+      inputPassword.removeAttribute('minlength');
+    }
   } else {
     if (tabReg) tabReg.classList.add('active');
     if (tabLogin) tabLogin.classList.remove('active');
+
+    if (inputUsername) {
+      inputUsername.placeholder = '至少 3 位字母或数字';
+      inputUsername.setAttribute('minlength', '3');
+    }
+    if (inputPassword) {
+      inputPassword.placeholder = '至少 6 位密码';
+      inputPassword.setAttribute('required', 'required');
+      inputPassword.setAttribute('minlength', '6');
+    }
 
     // 检查注册是否开放
     const isRegOpen = cachedRegInfo ? cachedRegInfo.allowed : true;
@@ -163,7 +186,23 @@ function switchAuthTab(mode) {
 async function handleAuthSubmit(e) {
   e.preventDefault();
   const username = document.getElementById('authUsername').value.trim();
-  const password = document.getElementById('authPassword').value.trim();
+  const password = document.getElementById('authPassword').value;
+
+  if (currentAuthMode === 'register') {
+    if (!username || username.length < 3) {
+      alert('注册时用户名须至少 3 位字母或数字');
+      return;
+    }
+    if (!password || password.length < 6) {
+      alert('注册时密码须至少 6 位');
+      return;
+    }
+  } else {
+    if (!username) {
+      alert('请输入用户名');
+      return;
+    }
+  }
 
   const url = currentAuthMode === 'login' ? '/api/user/login' : '/api/user/register';
   try {
