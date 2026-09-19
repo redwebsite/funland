@@ -81,18 +81,22 @@ async function loadRegInfo() {
   } catch (e) { }
 }
 
-// 用户状态显示更新
 function updateUserUi() {
   const btn = document.getElementById('btnUserAuth');
+  const label = document.getElementById('btnAuthLabel');
   if (!btn) return;
   if (currentUser) {
-    btn.innerHTML = `<span>👤 ${escapeHtml(currentUser)}</span> <span onclick="logoutUser(event)" style="margin-left: 6px; opacity: 0.75;" title="退出登录">退出</span>`;
-    btn.style.background = 'rgba(99, 102, 241, 0.3)';
-    btn.style.border = '1px solid rgba(99, 102, 241, 0.5)';
+    btn.onclick = null;
+    btn.innerHTML = `<i class="ri-user-3-line"></i><span id="btnAuthLabel">${escapeHtml(currentUser)}</span><span onclick="logoutUser(event)" style="margin-left:6px;opacity:0.6;font-size:0.78rem;cursor:pointer;" title="退出登录">退出</span>`;
+    btn.style.background = 'rgba(99, 102, 241, 0.25)';
+    btn.style.border = '1px solid rgba(99, 102, 241, 0.45)';
+    btn.style.boxShadow = 'none';
   } else {
-    btn.innerHTML = '👤 登录 / 注册';
-    btn.style.background = 'var(--gradient-hero)';
+    btn.onclick = openAuthModal;
+    btn.innerHTML = `<i class="ri-user-3-line"></i><span id="btnAuthLabel">登录 · 注册</span>`;
+    btn.style.background = 'var(--gradient-brand)';
     btn.style.border = 'none';
+    btn.style.boxShadow = '0 4px 14px rgba(99,102,241,0.35)';
   }
 }
 
@@ -102,13 +106,13 @@ function logoutUser(e) {
   currentUser = null;
   updateUserUi();
   checkUserDriveStatus();
-  alert('已退出登录');
+  // 静默退出，不弹窗
 }
 
 // 弹窗控制
 function openAuthModal() {
   if (currentUser) {
-    alert(`当前已登录为: ${currentUser}`);
+    // 已登录时点击按钮不弹窗，静默忽略（退出按钮在用户名旁边）
     return;
   }
   const modal = document.getElementById('authModal');
@@ -214,7 +218,7 @@ async function handleAuthSubmit(e) {
     const json = await res.json();
 
     if (json.success) {
-      alert(json.msg || (currentAuthMode === 'login' ? '登录成功！' : '注册成功！'));
+      // 静默登录成功：直接关闭弹窗，更新 UI，无需弹窗提示
       currentUser = username;
       localStorage.setItem('funland_user', username);
       closeAuthModal();

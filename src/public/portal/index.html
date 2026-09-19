@@ -47,10 +47,6 @@
         <span>服务运行中 · 302 直连加速 · 多级风险隔离</span>
       </div>
       <h1 class="hero-title">下一代私有媒体<br>直链加速引擎</h1>
-      <p class="hero-desc">
-        将你的 115 云盘与 Emby 媒体库无缝打通。<br>
-        播放时自动调度 115 官方 CDN 直链，客户端直连，服务器零中转。
-      </p>
 
       <!-- 3 个特性卡片 -->
       <div class="hero-cards-grid">
@@ -190,7 +186,7 @@
         <h2 class="box-title">
           <i class="ri-tv-2-line"></i> 客户端接入指引
         </h2>
-        <p class="box-desc">任意 Emby 客户端均可接入，填入以下参数即可享受满速直链</p>
+        <p class="box-desc">任意 Emby 客户端均可接入，填入以下参数即可</p>
 
         <!-- 服务器地址卡片 -->
         <div class="server-addr-card">
@@ -220,28 +216,21 @@
             <div class="step-number">1</div>
             <div class="step-content">
               <strong>新建 Emby 连接</strong>
-              <span>在客户端中选择「添加服务器」，协议类型选 <code>Emby</code></span>
+              <span>客户端选「添加服务器」，填入上方地址与端口</span>
             </div>
           </div>
           <div class="step-item">
             <div class="step-number">2</div>
             <div class="step-content">
-              <strong>填写服务器地址</strong>
-              <span>主机填服务器域名或 IP，端口填 <code>8097</code>（HTTPS 请填 <code>443</code>）</span>
+              <strong>登录你的账号</strong>
+              <span>使用本站注册的用户名与密码登录即可</span>
             </div>
           </div>
           <div class="step-item">
             <div class="step-number">3</div>
             <div class="step-content">
-              <strong>登录 Emby 账号</strong>
-              <span>使用你在本站注册的用户名与密码，与 Emby 账号同步登录</span>
-            </div>
-          </div>
-          <div class="step-item">
-            <div class="step-number">4</div>
-            <div class="step-content">
-              <strong>点播即享满速直链</strong>
-              <span>Funland 实时拦截播放请求并返回 302 CDN 直链，带宽不再是瓶颈</span>
+              <strong>点播享受满速直链</strong>
+              <span>Funland 实时拦截请求，自动调度 CDN 直链</span>
             </div>
           </div>
         </div>
@@ -255,6 +244,7 @@
           <span class="app-badge emerald">Fileball</span>
           <span class="app-badge purple">VidHub</span>
           <span class="app-badge slate">Forward</span>
+          <span style="color: var(--text-muted); font-size: 0.82rem; align-self: center;">...</span>
         </div>
       </div>
     </div>
@@ -270,7 +260,7 @@
           <div class="arch-step-num emerald">STEP 1</div>
           <div class="arch-card-icon"><i class="ri-user-line"></i></div>
           <div class="arch-card-title">个人盘即时直出</div>
-          <div class="arch-card-desc">优先检索你的 115 网盘持有记录，命中后直接返回个人 CDN 签名链接，全程小于 100ms</div>
+          <div class="arch-card-desc">优先查询你的 115 网盘，命中即返回个人 CDN 签名链接</div>
         </div>
 
         <div class="arch-arrow"><i class="ri-arrow-right-line"></i></div>
@@ -279,7 +269,7 @@
           <div class="arch-step-num cyan">STEP 2</div>
           <div class="arch-card-icon"><i class="ri-team-line"></i></div>
           <div class="arch-card-title">节点间秒传共享</div>
-          <div class="arch-card-desc">若本盘未持有，从已播放同一文件的其他用户网盘秒传复制，零外部流量消耗</div>
+          <div class="arch-card-desc">本盘未持有时，从其他用户网盘秒传复制，无外部流量消耗</div>
         </div>
 
         <div class="arch-arrow"><i class="ri-arrow-right-line"></i></div>
@@ -288,7 +278,7 @@
           <div class="arch-step-num amber">STEP 3</div>
           <div class="arch-card-icon"><i class="ri-cloud-line"></i></div>
           <div class="arch-card-title">源盘转存兜底</div>
-          <div class="arch-card-desc">前两步均未命中时，由源网盘安全转存至你的账号，大号直链永不下发客户端</div>
+          <div class="arch-card-desc">前两步均未命中时，由源盘安全转存，大号直链永不下发</div>
         </div>
       </div>
 
@@ -296,7 +286,7 @@
       <div class="cache-badge-row">
         <div class="cache-badge">
           <i class="ri-timer-flash-line"></i>
-          <span>直链解析后自动进入 <strong>30 分钟滑动过期缓存</strong>，拖拽、重播自动续期，杜绝高频 API 请求</span>
+          <span>直链命中后自动进入 <strong>30 分钟滑动缓存</strong>，拖拽重播自动续期，无频繁 API 调用</span>
         </div>
       </div>
     </div>
