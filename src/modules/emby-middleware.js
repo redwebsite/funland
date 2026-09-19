@@ -119,7 +119,7 @@ function createEmbyMiddleware() {
     console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, Path=${req.originalUrl || req.url}, 用户=${currentUserName} (${userId}), UA="${clientUa.substring(0, 50)}", IP=${clientIp}`);
 
     // 1. 检查 30 分钟滑动过期缓存 (结合 UA 指纹，杜绝签名不匹配导致 115 CDN 403)
-    const cacheKey = cacheScheduler.makeKey('stream:direct:v2', itemId, currentUserName, clientUa);
+    const cacheKey = cacheScheduler.makeKey('stream:direct:v3', itemId, currentUserName, clientUa);
     const cachedDirectUrl = cacheScheduler.get(cacheKey, true); // true = 命中时自动顺延 30 分钟
 
     if (cachedDirectUrl) {

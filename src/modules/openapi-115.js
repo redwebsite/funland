@@ -654,7 +654,7 @@ class OpenApi115 {
   }
 
   /**
-   * 6. 在指定用户的网盘中根据关键词、文件名或 pickcode 智能查询文件 (严格关键词过滤，杜绝张冠李戴)
+   * 6. 在指定用户的网盘中根据关键词、文件名或 pickcode 智能查询文件 (严格结构化匹配，彻底杜绝张冠李戴)
    */
   async searchUserDrive(cookie, query, targetEpisode = null) {
     if (!cookie || !query) return { found: false };
@@ -664,13 +664,36 @@ class OpenApi115 {
       return { found: false };
     }
 
-    // 清洗提取纯净标题与核心关键词
-    const cleanQuery = query
-      .replace(/\.[a-zA-Z0-9]+$/, '')
-      .replace(/\((?:19|20)\d{2}\)/g, ' ')
-      .replace(/\b(?:2160p|1080p|720p|4k|remux|web-dl|hdr|dovi|dv|h265|x265|hevc|aac|ddp\d(?:\.\d)?)\b/gi, ' ')
-      .replace(/[:：_\-\[\]\(\)]+/g, ' ')
-      .trim();
+    const trimmedQuery = query.trim();
+
+    // 1. 若 query 本身是 pickcode (15-20位字母数字组合)，直接通过 pickcode 精确搜索
+    if (/^[a-z0-9]{15,20}$/i.test(trimmedQuery)) {
+      try {
+        const url = `https://webapi.115.com/files/search?aid=1&cid=0&search_value=${encodeURIComponent(trimmedQuery)}&limit=10&format=json`;
+        const res = await this.http.get(url, {
+          headers: {
+            Cookie: cookie,
+            Referer: 'https://115.com/',
+            'User-Agent': USER_AGENT
+          },
+          timeout: 5000
+        });
+
+        if (res.data && res.data.state && res.data.data && Array.isArray(res.data.data)) {
+          const matched = res.data.data.find(it => (it.pc || it.pick_code || it.pickcode) === trimmedQuery);
+          if (matched) {
+            return {
+              found: true,
+              pickcode: trimmedQuery,
+              fileId: String(matched.fid || matched.file_id),
+              filename: matched.n || matched.file_name,
+              filesize: matched.s || matched.file_size || 0,
+              sha1: matched.sha1 || matched.sha || ''
+            };
+          }
+        }
+      } catch (e) {}
+    }
 
     // 提取剧集集数 (例如 S01E02, E02, 第2集, EP02)
     const extractEpisode = s => {
@@ -678,46 +701,88 @@ class OpenApi115 {
       const m = s.match(/(?:s\d+)?e(\d+)/i) || s.match(/(?:ep|第)\s*(\d+)\s*(?:集)?/i);
       return m ? parseInt(m[1], 10) : null;
     };
-    const queryEp = targetEpisode !== null ? targetEpisode : extractEpisode(query);
 
-    const candidateQueries = [];
-    const trimmedQuery = query.trim();
+    // 规范化字符串用于严格比对
+    const normalize = s => s.toLowerCase().replace(/[:：_\-\s\[\]\(\)\.\/／]+/g, '');
 
-    // 1. 若 query 本身是 pickcode (15-20位字母数字组合)，直接作为首选搜索
-    if (/^[a-z0-9]{15,20}$/i.test(trimmedQuery)) {
-      candidateQueries.push(trimmedQuery);
-    }
+    // 智能解析媒体名称结构
+    const parseQuery = raw => {
+      const clean = raw
+        .replace(/\.[a-zA-Z0-9]+$/, '')
+        .replace(/\((?:19|20)\d{2}\)/g, ' ')
+        .replace(/\b(?:2160p|1080p|720p|4k|remux|web-dl|hdr|dovi|dv|h265|x265|hevc|aac|ddp\d(?:\.\d)?)\b/gi, ' ')
+        .trim();
 
-    // 2. 纯净清洗标题与主标题
-    const mainTitle = cleanQuery.split(/\s+/)[0];
-    if (cleanQuery && cleanQuery.length >= 2 && !candidateQueries.includes(cleanQuery)) {
-      candidateQueries.push(cleanQuery);
-    }
-    if (mainTitle && mainTitle.length >= 2 && !candidateQueries.includes(mainTitle)) {
-      candidateQueries.push(mainTitle);
-    }
-    if (trimmedQuery !== cleanQuery && !candidateQueries.includes(trimmedQuery)) {
-      candidateQueries.push(trimmedQuery);
-    }
+      // 匹配季集标记，例如: "Camp Snoopy S01E01 ..." 或 "豆豆农场 - S01E01 - ..."
+      const seMatch = clean.match(/^(.*?)(?:\s+|-|_)*\b(S\d+)?\s*(E\d+|第\s*\d+\s*集|EP\d+)\b/i);
+      if (seMatch) {
+        const rawTitle = seMatch[1].replace(/[:：_\-\[\]\(\)]+/g, ' ').trim();
+        const epNum = parseInt(seMatch[3].replace(/\D/g, ''), 10);
+        return {
+          title: rawTitle,
+          isSeries: true,
+          episode: targetEpisode !== null ? targetEpisode : epNum
+        };
+      }
 
-    // 校验候选文件名是否真实命中目标标题（防止 115 模糊检索出无关文件）
-    const isTargetMatch = (itemName, targetTitle) => {
-      if (!itemName || !targetTitle) return false;
-      const normalize = s => s.toLowerCase().replace(/[:：_\-\s\[\]\(\)\.]+/g, '');
+      // 电影标题：去除年份、分辨率及标签
+      const movieTitle = clean
+        .replace(/\((?:19|20)\d{2}\).*$/, '')
+        .replace(/(?:19|20)\d{2}.*$/, '')
+        .replace(/[:：_\-\[\]\(\)]+/g, ' ')
+        .trim();
+
+      return {
+        title: movieTitle || clean,
+        isSeries: targetEpisode !== null,
+        episode: targetEpisode
+      };
+    };
+
+    const parsed = parseQuery(trimmedQuery);
+    const subTitles = parsed.title.split(/[\/／]/).map(s => s.trim()).filter(s => s.length >= 2);
+
+    // 严格匹配目标判定（杜绝张冠李戴）
+    const isTargetMatch = itemName => {
+      if (!itemName || subTitles.length === 0) return false;
       const itemNorm = normalize(itemName);
-      const titleNorm = normalize(targetTitle);
-      const titleMatch = itemNorm.includes(titleNorm) || titleNorm.includes(itemNorm);
+
+      // 1. 标题校验：候选文件必须包含完整的主标题（或中英文别名之一）
+      const titleMatch = subTitles.some(t => {
+        const norm = normalize(t);
+        return norm.length >= 2 && (itemNorm.includes(norm) || norm.includes(itemNorm));
+      });
       if (!titleMatch) return false;
 
-      // 若原查询或文件名指定了集数，候选文件必须严格匹配该集数
-      if (queryEp !== null) {
+      // 2. 电视剧集集数严格校验：若当前检索的是剧集某一集，候选文件必须且只能匹配该集！
+      if (parsed.isSeries && parsed.episode !== null) {
         const itemEp = extractEpisode(itemName);
-        if (itemEp !== null && itemEp !== queryEp) {
+        // 如果候选文件没有集数信息（例如电影、外挂字幕或全集压缩包），或集数不一致，坚决排除！
+        if (itemEp === null || itemEp !== parsed.episode) {
           return false;
         }
       }
+
       return true;
     };
+
+    // 构建精准搜索候选词序列
+    const candidateQueries = [];
+    if (parsed.isSeries && parsed.episode !== null) {
+      const ep2 = String(parsed.episode).padStart(2, '0');
+      for (const st of subTitles) {
+        candidateQueries.push(`${st} E${ep2}`);
+        candidateQueries.push(`${st} 第${parsed.episode}集`);
+        candidateQueries.push(st);
+      }
+    } else {
+      for (const st of subTitles) {
+        candidateQueries.push(st);
+      }
+    }
+    if (parsed.title && !candidateQueries.includes(parsed.title)) {
+      candidateQueries.push(parsed.title);
+    }
 
     for (const q of candidateQueries) {
       try {
@@ -733,14 +798,13 @@ class OpenApi115 {
         });
 
         if (res.data && res.data.state && res.data.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
-          // 严格匹配目标项目
           const matchedItem = res.data.data.find(item => {
             const pc = item.pc || item.pick_code || item.pickcode;
             if (!pc) return false;
             const name = item.n || item.file_name || '';
             // 若直接搜 pickcode 命中
             if (pc === q) return true;
-            return isTargetMatch(name, mainTitle || cleanQuery);
+            return isTargetMatch(name);
           });
 
           if (matchedItem) {
