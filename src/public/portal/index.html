@@ -44,7 +44,7 @@
     <section class="hero-section">
       <div class="hero-pill">
         <span class="hero-pill-dot"></span>
-        <span>服务运行中 · 302 直连加速 · 多级风险隔离</span>
+        <span>服务运行中</span>
       </div>
       <h1 class="hero-title">下一代私有媒体<br>直链加速引擎</h1>
 
@@ -201,11 +201,11 @@
             <span>Emby 代理服务器</span>
           </div>
           <div class="server-addr-meta">
-            <div class="server-meta-chip" style="flex:1; min-width:0;">
+            <div class="server-meta-chip" style="flex:1; min-width:0; overflow:hidden;">
               <span class="chip-label">地址 (Host)</span>
-              <div style="display:flex; align-items:baseline; gap:2px; min-width:0; flex-wrap:wrap;">
+              <div style="display:flex; align-items:baseline; gap:2px; white-space:nowrap; overflow:hidden;">
                 <span id="embyProtocolDisplay" style="color:var(--text-muted); font-size:0.78rem; flex-shrink:0;">https://</span>
-                <strong id="embyHostOnly" style="word-break:break-all;">emby.funland.us.ci</strong>
+                <strong id="embyHostOnly" style="overflow:hidden; text-overflow:ellipsis;">emby.funland.us.ci</strong>
               </div>
             </div>
             <div class="server-meta-chip" style="flex-shrink:0;">
@@ -213,7 +213,7 @@
               <strong id="embyPortDisplay" style="color: #34d399;">443</strong>
             </div>
             <button class="copy-btn" onclick="copyServerAddress()" style="flex-shrink:0;">
-              <i class="ri-clipboard-line"></i> 复制地址
+              <i class="ri-clipboard-line"></i> 复制
             </button>
           </div>
         </div>
@@ -231,7 +231,7 @@
             <div class="step-number">2</div>
             <div class="step-content">
               <strong>登录你的账号</strong>
-              <span>使用本站注册的用户名与密码登录即可</span>
+              <span>使用本站注册的用户名与密码登录</span>
             </div>
           </div>
         </div>
@@ -239,12 +239,12 @@
         <!-- 兼容客户端徽章 -->
         <div class="compat-row">
           <span class="compat-label">已兼容</span>
-          <span class="app-badge indigo">Infuse</span>
-          <span class="app-badge cyan">SenPlayer</span>
-          <span class="app-badge amber">Rex</span>
-          <span class="app-badge emerald">Fileball</span>
-          <span class="app-badge purple">VidHub</span>
-          <span class="app-badge slate">Forward</span>
+          <span class="app-badge badge-infuse">Infuse</span>
+          <span class="app-badge badge-senplayer">SenPlayer</span>
+          <span class="app-badge badge-rex">Rex</span>
+          <span class="app-badge badge-fileball">Fileball</span>
+          <span class="app-badge badge-vidhub">VidHub</span>
+          <span class="app-badge badge-forward">Forward</span>
           <span style="color: var(--text-muted); font-size: 0.82rem; align-self: center;">...</span>
         </div>
       </div>
