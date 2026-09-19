@@ -195,10 +195,17 @@ function createEmbyMiddleware() {
         if (userSaved && userSaved.pickcode) {
           const linkRes = await openApi115.getUserDirectLink(userCookie, userSaved.pickcode, userSaved.file_id, clientUa);
           if (linkRes.success) {
-            resolvedDirectUrl = linkRes.downloadUrl;
-            resolvedUid = linkRes.uid;
-            accelerationModeUsed = 'STEP1_OWN_INDEX';
-            console.log(`✅ [Step 1 命中] 从小号本地历史索引直出: Pickcode=${userSaved.pickcode}, UID=${resolvedUid || '小号'}`);
+            // 校验已解析文件的名称与当前请求名称的一致性，自动自愈此前被旧版本污染的错误缓存
+            const isMatch = !sourceFilename || !linkRes.filename || openApi115.isTargetMatch(linkRes.filename, sourceFilename);
+            if (!isMatch) {
+              console.warn(`⚠️ [Step 1 错位纠正] 本地历史记录的文件 "${linkRes.filename}" 与当前请求 "${sourceFilename}" 不匹配 (检测到此前遗留的错误映射)，自动清除错误索引并重新寻源...`);
+              dbService.deleteUserFile(currentUser.id, sourceSha1);
+            } else {
+              resolvedDirectUrl = linkRes.downloadUrl;
+              resolvedUid = linkRes.uid;
+              accelerationModeUsed = 'STEP1_OWN_INDEX';
+              console.log(`✅ [Step 1 命中] 从小号本地历史索引直出: Pickcode=${userSaved.pickcode}, UID=${resolvedUid || '小号'}`);
+            }
           }
         }
       }
@@ -246,7 +253,8 @@ function createEmbyMiddleware() {
                 userCookie,
                 peerUser.file_id || sourceFileId,
                 targetCid,
-                sourceFilename
+                sourceFilename,
+                sourceSha1
               );
               if (p2pRes.success && p2pRes.pickcode) {
                 const linkRes = await openApi115.getUserDirectLink(userCookie, p2pRes.pickcode, p2pRes.fileId, clientUa);
@@ -281,7 +289,8 @@ function createEmbyMiddleware() {
                     userCookie,
                     resolvedSource.fileId,
                     targetCid,
-                    sourceFilename
+                    resolvedSource.filename || sourceFilename,
+                    resolvedSource.sha1 || sourceSha1
                   );
 
                   if (transferRes.success && transferRes.pickcode) {
@@ -388,7 +397,6 @@ function createEmbyMiddleware() {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, HEAD, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', '*');
-      res.setHeader('Connection', 'close');
       res.status(204).end();
 
       // 后台异步静默转发至真实上游 Emby 服务器

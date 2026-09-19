@@ -470,7 +470,7 @@ class OpenApi115 {
   /**
    * 6. 115 账号间官方分享与转存 (核心隔离机制：将源盘文件瞬间秒传复制到小号的指定目录)
    */
-  async shareAndReceiveFile(sourceCookie, receiverCookie, fileId, targetCid = '0', filename = '') {
+  async shareAndReceiveFile(sourceCookie, receiverCookie, fileId, targetCid = '0', filename = '', expectedSha1 = '') {
     if (!sourceCookie || !receiverCookie || !fileId) {
       return { success: false, error: '缺少转存必要参数 (sourceCookie, receiverCookie 或 fileId)' };
     }
@@ -566,7 +566,7 @@ class OpenApi115 {
 
       const checkTargetDir = async () => {
         try {
-          const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=20&format=json&o=user_ptime&asc=0`;
+          const listUrl = `https://webapi.115.com/files?aid=1&cid=${encodeURIComponent(cleanCid)}&show_dir=0&limit=30&format=json&o=user_ptime&asc=0`;
           const listRes = await this.http.get(listUrl, {
             headers: {
               Cookie: receiverCookie,
@@ -578,12 +578,29 @@ class OpenApi115 {
 
           if (listRes.data && listRes.data.state && Array.isArray(listRes.data.data) && listRes.data.data.length > 0) {
             let matched = null;
-            if (filename) {
-              matched = listRes.data.data.find(f => f.n === filename || f.n.includes(filename) || filename.includes(f.n));
+            // 1. 优先根据 SHA1 精准比对 (指纹相同 100% 为目标文件)
+            if (expectedSha1) {
+              matched = listRes.data.data.find(f => {
+                const s = f.sha1 || f.sha || '';
+                return s && s.toLowerCase() === expectedSha1.toLowerCase();
+              });
             }
-            if (!matched) matched = listRes.data.data[0];
-            if (matched && matched.pc) {
-              return { pc: matched.pc, fid: matched.fid };
+            // 2. 备用根据文件名结构化严格比对 (坚决杜绝 fallback 到 data[0] 张冠李戴)
+            if (!matched && filename) {
+              matched = listRes.data.data.find(f => {
+                const n = f.n || f.file_name || '';
+                return n === filename || this.isTargetMatch(n, filename);
+              });
+            }
+            if (matched) {
+              const pc = matched.pc || matched.pick_code || matched.pickcode;
+              if (pc) {
+                return {
+                  pc,
+                  fid: String(matched.fid || matched.file_id || ''),
+                  name: matched.n || matched.file_name || ''
+                };
+              }
             }
           }
         } catch (e) {
@@ -594,8 +611,8 @@ class OpenApi115 {
 
       let dirHit = await checkTargetDir();
       if (!dirHit) {
-        // 等待 600ms 以应对 115 目录落盘的最终一致性延迟
-        await new Promise(r => setTimeout(r, 600));
+        // 等待 800ms 以应对 115 目录落盘的最终一致性延迟
+        await new Promise(r => setTimeout(r, 800));
         dirHit = await checkTargetDir();
       }
 
@@ -604,13 +621,20 @@ class OpenApi115 {
         newFileId = dirHit.fid;
       }
 
-      // 若目录列出未拿到，备用按文件名在小号盘内检索
+      // 若目录列出未拿到，备用按文件名在小号盘内严格检索
       if (!newPickcode && filename) {
         const search = await this.searchUserDrive(receiverCookie, filename);
         if (search.found && search.pickcode) {
           newPickcode = search.pickcode;
           newFileId = search.fileId;
         }
+      }
+
+      if (!newPickcode) {
+        return {
+          success: false,
+          error: `转存已提交，但未能在小号目录中确认落盘目标文件 ("${filename || fileId}")`
+        };
       }
 
       return {
@@ -695,76 +719,8 @@ class OpenApi115 {
       } catch (e) {}
     }
 
-    // 提取剧集集数 (例如 S01E02, E02, 第2集, EP02)
-    const extractEpisode = s => {
-      if (!s) return null;
-      const m = s.match(/(?:s\d+)?e(\d+)/i) || s.match(/(?:ep|第)\s*(\d+)\s*(?:集)?/i);
-      return m ? parseInt(m[1], 10) : null;
-    };
-
-    // 规范化字符串用于严格比对
-    const normalize = s => s.toLowerCase().replace(/[:：_\-\s\[\]\(\)\.\/／]+/g, '');
-
-    // 智能解析媒体名称结构
-    const parseQuery = raw => {
-      const clean = raw
-        .replace(/\.[a-zA-Z0-9]+$/, '')
-        .replace(/\((?:19|20)\d{2}\)/g, ' ')
-        .replace(/\b(?:2160p|1080p|720p|4k|remux|web-dl|hdr|dovi|dv|h265|x265|hevc|aac|ddp\d(?:\.\d)?)\b/gi, ' ')
-        .trim();
-
-      // 匹配季集标记，例如: "Camp Snoopy S01E01 ..." 或 "豆豆农场 - S01E01 - ..."
-      const seMatch = clean.match(/^(.*?)(?:\s+|-|_)*\b(S\d+)?\s*(E\d+|第\s*\d+\s*集|EP\d+)\b/i);
-      if (seMatch) {
-        const rawTitle = seMatch[1].replace(/[:：_\-\[\]\(\)]+/g, ' ').trim();
-        const epNum = parseInt(seMatch[3].replace(/\D/g, ''), 10);
-        return {
-          title: rawTitle,
-          isSeries: true,
-          episode: targetEpisode !== null ? targetEpisode : epNum
-        };
-      }
-
-      // 电影标题：去除年份、分辨率及标签
-      const movieTitle = clean
-        .replace(/\((?:19|20)\d{2}\).*$/, '')
-        .replace(/(?:19|20)\d{2}.*$/, '')
-        .replace(/[:：_\-\[\]\(\)]+/g, ' ')
-        .trim();
-
-      return {
-        title: movieTitle || clean,
-        isSeries: targetEpisode !== null,
-        episode: targetEpisode
-      };
-    };
-
-    const parsed = parseQuery(trimmedQuery);
-    const subTitles = parsed.title.split(/[\/／]/).map(s => s.trim()).filter(s => s.length >= 2);
-
-    // 严格匹配目标判定（杜绝张冠李戴）
-    const isTargetMatch = itemName => {
-      if (!itemName || subTitles.length === 0) return false;
-      const itemNorm = normalize(itemName);
-
-      // 1. 标题校验：候选文件必须包含完整的主标题（或中英文别名之一）
-      const titleMatch = subTitles.some(t => {
-        const norm = normalize(t);
-        return norm.length >= 2 && (itemNorm.includes(norm) || norm.includes(itemNorm));
-      });
-      if (!titleMatch) return false;
-
-      // 2. 电视剧集集数严格校验：若当前检索的是剧集某一集，候选文件必须且只能匹配该集！
-      if (parsed.isSeries && parsed.episode !== null) {
-        const itemEp = extractEpisode(itemName);
-        // 如果候选文件没有集数信息（例如电影、外挂字幕或全集压缩包），或集数不一致，坚决排除！
-        if (itemEp === null || itemEp !== parsed.episode) {
-          return false;
-        }
-      }
-
-      return true;
-    };
+    const parsed = this.parseQuery(trimmedQuery, targetEpisode);
+    const subTitles = (parsed.title || '').split(/[\/／]/).map(s => s.trim()).filter(s => s.length >= 2);
 
     // 构建精准搜索候选词序列
     const candidateQueries = [];
@@ -804,7 +760,7 @@ class OpenApi115 {
             const name = item.n || item.file_name || '';
             // 若直接搜 pickcode 命中
             if (pc === q) return true;
-            return isTargetMatch(name);
+            return this.isTargetMatch(name, trimmedQuery, targetEpisode);
           });
 
           if (matchedItem) {
@@ -831,6 +787,82 @@ class OpenApi115 {
     return { found: false };
   }
 
+  // 提取剧集集数 (例如 S01E02, E02, 第2集, EP02)
+  extractEpisode(s) {
+    if (!s) return null;
+    const m = s.match(/(?:s\d+)?e(\d+)/i) || s.match(/(?:ep|第)\s*(\d+)\s*(?:集)?/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  // 规范化字符串用于严格比对
+  normalize(s) {
+    return (s || '').toLowerCase().replace(/[:：_\-\s\[\]\(\)\.\/／]+/g, '');
+  }
+
+  // 智能解析媒体名称结构
+  parseQuery(raw, targetEpisode = null) {
+    const clean = (raw || '')
+      .replace(/\.[a-zA-Z0-9]+$/, '')
+      .replace(/\((?:19|20)\d{2}\)/g, ' ')
+      .replace(/\b(?:2160p|1080p|720p|4k|remux|web-dl|hdr|dovi|dv|h265|x265|hevc|aac|ddp\d(?:\.\d)?)\b/gi, ' ')
+      .trim();
+
+    const extractedEp = this.extractEpisode(clean);
+    const epToUse = targetEpisode !== null ? targetEpisode : extractedEp;
+
+    // 匹配季集标记，例如: "Camp Snoopy S01E01 ..." 或 "豆豆农场 - S01E01 - ..."
+    const seMatch = clean.match(/^(.*?)(?:\s+|-|_)*\b(S\d+)?\s*(E\d+|第\s*\d+\s*集|EP\d+)\b/i);
+    if (seMatch) {
+      const rawTitle = seMatch[1].replace(/[:：_\-\[\]\(\)]+/g, ' ').trim();
+      const epNum = parseInt(seMatch[3].replace(/\D/g, ''), 10);
+      return {
+        title: rawTitle,
+        isSeries: true,
+        episode: epToUse !== null ? epToUse : epNum
+      };
+    }
+
+    // 电影标题：去除年份、分辨率及标签
+    const movieTitle = clean
+      .replace(/\((?:19|20)\d{2}\).*$/, '')
+      .replace(/(?:19|20)\d{2}.*$/, '')
+      .replace(/[:：_\-\[\]\(\)]+/g, ' ')
+      .trim();
+
+    return {
+      title: movieTitle || clean,
+      isSeries: epToUse !== null,
+      episode: epToUse
+    };
+  }
+
+  // 严格匹配目标判定（杜绝张冠李戴）
+  isTargetMatch(candidateName, targetQuery, targetEpisode = null) {
+    if (!candidateName || !targetQuery) return false;
+    const parsed = this.parseQuery(targetQuery, targetEpisode);
+    const subTitles = (parsed.title || '').split(/[\/／]/).map(s => s.trim()).filter(s => s.length >= 2);
+    if (subTitles.length === 0) return false;
+
+    const candNorm = this.normalize(candidateName);
+
+    // 1. 标题校验：候选文件必须包含完整的主标题（或中英文别名之一）
+    const titleMatch = subTitles.some(t => {
+      const norm = this.normalize(t);
+      return norm.length >= 2 && (candNorm.includes(norm) || norm.includes(candNorm));
+    });
+    if (!titleMatch) return false;
+
+    // 2. 电视剧集集数严格校验：若当前检索的是剧集某一集，候选文件必须且只能匹配该集！
+    if (parsed.isSeries && parsed.episode !== null) {
+      const candEp = this.extractEpisode(candidateName);
+      if (candEp === null || candEp !== parsed.episode) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   /**
    * 在指定 115 账号中定位文件，获取该账号下真实的 file_id 与 pickcode
    */
@@ -841,34 +873,43 @@ class OpenApi115 {
     if (pickcode) {
       const linkRes = await this.getUserDirectLink(cookie, pickcode, '', clientUserAgent);
       if (linkRes.success && linkRes.downloadUrl) {
-        return {
-          found: true,
-          fileId: linkRes.fileId,
-          pickcode: linkRes.pickcode || pickcode,
-          filename: linkRes.filename || filename,
-          filesize: linkRes.filesize || 0,
-          downloadUrl: linkRes.downloadUrl,
-          uid: linkRes.uid
-        };
+        // 若传了期望文件名，必须验证文件名匹配，防止 pickcode 解析出无关文件
+        if (filename && linkRes.filename && !this.isTargetMatch(linkRes.filename, filename)) {
+          console.warn(`[115] resolveFileOnCookie: pickcode 解析的文件名 "${linkRes.filename}" 与请求 "${filename}" 不匹配，放弃该直链命中`);
+        } else {
+          return {
+            found: true,
+            fileId: linkRes.fileId,
+            pickcode: linkRes.pickcode || pickcode,
+            filename: linkRes.filename || filename,
+            filesize: linkRes.filesize || 0,
+            downloadUrl: linkRes.downloadUrl,
+            uid: linkRes.uid
+          };
+        }
       }
 
       // 1.2 若直接解析直链未命中，在指定账号网盘中直接搜索该 pickcode
       const pcSearch = await this.searchUserDrive(cookie, pickcode);
       if (pcSearch.found && pcSearch.fileId) {
-        let resolvedDl = '';
-        let resolvedUid = '';
-        if (pcSearch.pickcode) {
-          const directRes = await this.getUserDirectLink(cookie, pcSearch.pickcode, pcSearch.fileId, clientUserAgent);
-          if (directRes.success && directRes.downloadUrl) {
-            resolvedDl = directRes.downloadUrl;
-            resolvedUid = directRes.uid;
+        if (filename && pcSearch.filename && !this.isTargetMatch(pcSearch.filename, filename)) {
+          console.warn(`[115] resolveFileOnCookie: pickcode 搜索到的文件名 "${pcSearch.filename}" 与请求 "${filename}" 不匹配，放弃该命中`);
+        } else {
+          let resolvedDl = '';
+          let resolvedUid = '';
+          if (pcSearch.pickcode) {
+            const directRes = await this.getUserDirectLink(cookie, pcSearch.pickcode, pcSearch.fileId, clientUserAgent);
+            if (directRes.success && directRes.downloadUrl) {
+              resolvedDl = directRes.downloadUrl;
+              resolvedUid = directRes.uid;
+            }
           }
+          return {
+            ...pcSearch,
+            downloadUrl: resolvedDl,
+            uid: resolvedUid
+          };
         }
-        return {
-          ...pcSearch,
-          downloadUrl: resolvedDl,
-          uid: resolvedUid
-        };
       }
     }
 

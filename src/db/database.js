@@ -310,6 +310,21 @@ const dbService = {
       return null;
     }
   },
+  deleteUserFile(userId, sha1) {
+    if (!userId || !sha1) return;
+    try {
+      db.prepare("DELETE FROM user_files WHERE user_id = ? AND sha1 = ?").run(userId, sha1);
+      const file = db.prepare("SELECT users_json FROM files WHERE sha1 = ?").get(sha1);
+      if (file && file.users_json) {
+        let users = [];
+        try { users = JSON.parse(file.users_json); } catch (e) {}
+        const filtered = users.filter(id => String(id) !== String(userId));
+        db.prepare("UPDATE files SET users_json = ? WHERE sha1 = ?").run(JSON.stringify(filtered), sha1);
+      }
+    } catch (e) {
+      console.warn('[DB] deleteUserFile 异常:', e.message);
+    }
+  },
   findRecentPeerWithFile(sha1, excludeUserId) {
     if (!sha1) return null;
     // 优先从 user_files 查询持有该文件的其他小号节点
