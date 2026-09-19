@@ -116,10 +116,10 @@ function createEmbyMiddleware() {
     const userCookie = currentUser && currentUser.cookie_status === 'active' ? currentUser.cookie_115 : null;
     const currentUserName = currentUser ? currentUser.username : (userId || 'anonymous');
 
-    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, 用户=${currentUserName} (${userId}), UA="${clientUa.substring(0, 50)}", IP=${clientIp}`);
+    console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, Path=${req.originalUrl || req.url}, 用户=${currentUserName} (${userId}), UA="${clientUa.substring(0, 50)}", IP=${clientIp}`);
 
     // 1. 检查 30 分钟滑动过期缓存 (结合 UA 指纹，杜绝签名不匹配导致 115 CDN 403)
-    const cacheKey = cacheScheduler.makeKey('stream:direct', itemId, currentUserName, clientUa);
+    const cacheKey = cacheScheduler.makeKey('stream:direct:v2', itemId, currentUserName, clientUa);
     const cachedDirectUrl = cacheScheduler.get(cacheKey, true); // true = 命中时自动顺延 30 分钟
 
     if (cachedDirectUrl) {
@@ -205,7 +205,7 @@ function createEmbyMiddleware() {
 
       // 2. 检查小号网盘中是否已直接持有该资源 (通过 pickcode 或已存文件名定位真实 file_id，绝不张冠李戴)
       if (!resolvedDirectUrl) {
-        const ownResolved = await openApi115.resolveFileOnCookie(userCookie, sourcePickcode, sourceFilename, sourceSha1);
+        const ownResolved = await openApi115.resolveFileOnCookie(userCookie, sourcePickcode, sourceFilename, sourceSha1, clientUa);
         if (ownResolved.found && ownResolved.pickcode) {
           console.log(`🎯 [Step 1 搜索命中] 在小号网盘匹配到已存文件: "${ownResolved.filename}" (Pickcode: ${ownResolved.pickcode})`);
           const linkRes = ownResolved.downloadUrl ? { success: true, downloadUrl: ownResolved.downloadUrl, uid: ownResolved.uid }
@@ -271,7 +271,7 @@ function createEmbyMiddleware() {
             if (activeCookies.length > 0) {
               for (const sourceCookieObj of activeCookies) {
                 console.log(`🔍 [Step 3 寻源] 在源网盘 (${sourceCookieObj.name || 'Master'}) 中精确定位真实文件...`);
-                const resolvedSource = await openApi115.resolveFileOnCookie(sourceCookieObj.cookie, sourcePickcode, sourceFilename, sourceSha1);
+                const resolvedSource = await openApi115.resolveFileOnCookie(sourceCookieObj.cookie, sourcePickcode, sourceFilename, sourceSha1, clientUa);
                 if (resolvedSource.found && resolvedSource.fileId) {
                   console.log(`🚀 [Step 3 源盘转存] 唤醒源网盘 (${sourceCookieObj.name}) 执行秒传转存至小号目录 (${targetCid})... (FileId: ${resolvedSource.fileId}, Name: "${resolvedSource.filename}")`);
                   dbService.updateCookieUsed(sourceCookieObj.id);

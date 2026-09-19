@@ -269,6 +269,8 @@ class OpenApi115 {
     if (!cookie) return { success: false, error: '缺少用户 115 Cookie' };
     if (!pickcode) return { success: false, error: '缺少 pickcode' };
 
+    const ua = clientUserAgent || USER_AGENT;
+
     // 1. 优先使用 115 Chrome/App 官方协议接口 (proapi downurl + RSA+XOR)，无文件大小限制，100% 返回真实直链
     try {
       const tm = Math.floor(Date.now() / 1000);
@@ -280,7 +282,7 @@ class OpenApi115 {
           Cookie: cookie,
           Referer: 'https://115.com/',
           'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': USER_AGENT
+          'User-Agent': ua
         },
         timeout: 6000
       });
@@ -325,7 +327,7 @@ class OpenApi115 {
         headers: {
           Cookie: cookie,
           Referer: 'https://115.com/',
-          'User-Agent': USER_AGENT
+          'User-Agent': ua
         },
         timeout: 5000
       });
@@ -351,7 +353,7 @@ class OpenApi115 {
         headers: {
           Cookie: cookie,
           Referer: 'https://115.com/',
-          'User-Agent': USER_AGENT
+          'User-Agent': ua
         },
         timeout: 5000
       });
@@ -768,12 +770,12 @@ class OpenApi115 {
   /**
    * 在指定 115 账号中定位文件，获取该账号下真实的 file_id 与 pickcode
    */
-  async resolveFileOnCookie(cookie, pickcode = '', filename = '', sha1 = '') {
+  async resolveFileOnCookie(cookie, pickcode = '', filename = '', sha1 = '', clientUserAgent = '') {
     if (!cookie) return { found: false };
 
     // 1. 若有 pickcode，优先通过 getUserDirectLink 探测该账号是否直接拥有该文件 (100% 准确提取该账号所属真实 file_id 与直链)
     if (pickcode) {
-      const linkRes = await this.getUserDirectLink(cookie, pickcode);
+      const linkRes = await this.getUserDirectLink(cookie, pickcode, '', clientUserAgent);
       if (linkRes.success && linkRes.downloadUrl) {
         return {
           found: true,
@@ -789,7 +791,20 @@ class OpenApi115 {
       // 1.2 若直接解析直链未命中，在指定账号网盘中直接搜索该 pickcode
       const pcSearch = await this.searchUserDrive(cookie, pickcode);
       if (pcSearch.found && pcSearch.fileId) {
-        return pcSearch;
+        let resolvedDl = '';
+        let resolvedUid = '';
+        if (pcSearch.pickcode) {
+          const directRes = await this.getUserDirectLink(cookie, pcSearch.pickcode, pcSearch.fileId, clientUserAgent);
+          if (directRes.success && directRes.downloadUrl) {
+            resolvedDl = directRes.downloadUrl;
+            resolvedUid = directRes.uid;
+          }
+        }
+        return {
+          ...pcSearch,
+          downloadUrl: resolvedDl,
+          uid: resolvedUid
+        };
       }
     }
 
@@ -800,7 +815,7 @@ class OpenApi115 {
         let resolvedDl = '';
         let resolvedUid = '';
         if (searchRes.pickcode) {
-          const directRes = await this.getUserDirectLink(cookie, searchRes.pickcode, searchRes.fileId);
+          const directRes = await this.getUserDirectLink(cookie, searchRes.pickcode, searchRes.fileId, clientUserAgent);
           if (directRes.success && directRes.downloadUrl) {
             resolvedDl = directRes.downloadUrl;
             resolvedUid = directRes.uid;
