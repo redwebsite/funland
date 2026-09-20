@@ -242,6 +242,9 @@ async function loadStats() {
       if (elActiveKeys) elActiveKeys.innerText = d.cache ? d.cache.activeKeysCount : 0;
       if (elPool) elPool.innerText = d.totalPool || 0;
 
+      const elIndexedFiles = document.getElementById('statIndexedFiles');
+      if (elIndexedFiles) elIndexedFiles.innerText = (d.totalFiles || 0).toLocaleString();
+
       const currentHost = window.location.hostname || 'localhost';
       const topDomain = document.getElementById('topDomain');
       if (topDomain) topDomain.innerText = currentHost;
