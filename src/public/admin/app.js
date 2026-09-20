@@ -730,7 +730,7 @@ async function loadUsers() {
       return;
     }
 
-    const typeLabels = { trial_7d: '7天体验', monthly: '月卡', quarterly: '季卡', yearly: '年卡' };
+    const typeLabels = { trial_7d: '7天体验', monthly: '月卡', quarterly: '季卡', yearly: '年卡', vip: 'VIP卡' };
 
     usersJson.data.forEach(user => {
       const tr = document.createElement('tr');
@@ -739,30 +739,41 @@ async function loadUsers() {
       const mType = user.membership_type || '';
       const mExp = user.membership_expires_at || '';
       const isExpired = mExp && new Date() > new Date(mExp);
-      const mLabel = typeLabels[mType] || (mType === 'permanent' ? '永久' : (mType ? mType : '未设置'));
+      const mLabel = typeLabels[mType] || (mType ? mType : '未设置');
+      // VIP 卡用金色，年卡用蓝色，其他用紫色
+      const mBadgeStyle = !mType
+        ? ''
+        : (isExpired ? '' : (mType === 'vip'
+          ? 'background:linear-gradient(135deg,rgba(245,158,11,0.25),rgba(249,115,22,0.25));color:#f59e0b;border-color:rgba(245,158,11,0.4);'
+          : (mType === 'yearly' ? 'background:rgba(56,189,248,0.15);color:#38bdf8;border-color:rgba(56,189,248,0.3);' : '')));
       const mBadgeClass = !mType ? 'badge-fallback' : (isExpired ? 'badge-fallback' : 'badge-step1');
       const expDisplay = !mExp ? (mType ? '永久' : '—') : (isExpired
         ? `<span style="color:#f87171;">${new Date(mExp).toLocaleDateString()} 已过期</span>`
         : new Date(mExp).toLocaleDateString());
 
       tr.innerHTML = `
+        <td style="text-align:center;"><input type="checkbox" class="user-select-cb" data-uid="${user.id}" onchange="onUserCheckChange()" style="cursor:pointer;width:15px;height:15px;"></td>
         <td>#${user.id}</td>
         <td><strong>${escapeHtml(user.username)}</strong></td>
-        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback">未关联</span>`}</td>
+        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">&#x2705; 已关联</span>` : `<span class="badge badge-fallback">未关联</span>`}</td>
         <td><span class="badge ${user.cookie_status === 'active' ? 'badge-step1' : 'badge-fallback'}">${escapeHtml(user.cookie_status || '未绑定')}</span></td>
-        <td><span class="badge ${mBadgeClass}">${escapeHtml(mLabel)}</span></td>
+        <td><span class="badge ${mBadgeClass}" style="${mBadgeStyle}">${escapeHtml(mLabel)}</span></td>
         <td style="font-size:0.8rem;">${expDisplay}</td>
         <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</td>
         <td><span class="badge ${isDisabled ? 'badge-fallback' : 'badge-step2'}">${isDisabled ? '已封禁' : '正常'}</span></td>
         <td style="display: flex; gap: 6px; flex-wrap: wrap;">
-          ${!hasEmby ? `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="syncUserToEmby(${user.id}, '${escapeHtml(user.username)}')">同步至 Emby</button>` : ''}
+          ${!hasEmby ? `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="syncUserToEmby(${user.id}, '${escapeHtml(user.username)}')">\u540c步至 Emby</button>` : ''}
           <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="setUserMembership(${user.id}, '${escapeHtml(user.username)}')"><i class="ri-vip-crown-line"></i> 会员</button>
           <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">${isDisabled ? '解封' : '封禁'}</button>
-          <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">删除</button>
+          <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">\u5220除</button>
         </td>
       `;
       tbody.appendChild(tr);
     });
+    // 重置全选框与批量栏
+    const selectAll = document.getElementById('selectAllUsers');
+    if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+    updateBatchBar();
   } catch (e) {
     showToast('加载用户数据失败: ' + e.message, 'error');
   }
@@ -846,10 +857,10 @@ async function deleteUserAccount(id) {
 // 设置用户会员
 function setUserMembership(id, username) {
   const type = prompt(
-    `请选择会员卡类型（输入数字）：\n1. 7天体验卡\n2. 月卡 (30天)\n3. 季卡 (90天)\n4. 年卡 (365天)\n5. 永久会员\n\n用户: ${username}`
+    `请选择会员卡类型（输入数字）：\n1. 7天体验卡\n2. 月卡 (30天)\n3. 季卡 (90天)\n4. 年卡 (365天)\n5. VIP 卡（永久）\n\n用户: ${username}`
   );
   if (!type) return;
-  const typeMap = { '1': 'trial_7d', '2': 'monthly', '3': 'quarterly', '4': 'yearly', '5': 'permanent' };
+  const typeMap = { '1': 'trial_7d', '2': 'monthly', '3': 'quarterly', '4': 'yearly', '5': 'vip' };
   const membershipType = typeMap[type.trim()];
   if (!membershipType) { showToast('输入无效，请输入1~5', 'error'); return; }
   adminFetch(`/api/admin/users/${id}/membership`, {
@@ -860,6 +871,71 @@ function setUserMembership(id, username) {
     if (json.success) { showToast(json.msg); loadUsers(); }
     else showToast(json.error || '设置失败', 'error');
   }).catch(e => showToast(e.message, 'error'));
+}
+
+// 勾选相关逻辑
+function getSelectedUserIds() {
+  return Array.from(document.querySelectorAll('.user-select-cb:checked')).map(cb => parseInt(cb.dataset.uid, 10));
+}
+
+function updateBatchBar() {
+  const selected = getSelectedUserIds();
+  const bar = document.getElementById('batchActionBar');
+  const countEl = document.getElementById('batchSelectedCount');
+  if (!bar) return;
+  if (selected.length > 0) {
+    bar.style.display = 'flex';
+    if (countEl) countEl.textContent = `已选 ${selected.length} 人`;
+  } else {
+    bar.style.display = 'none';
+  }
+  // 全选框中间状态
+  const all = document.querySelectorAll('.user-select-cb');
+  const selectAll = document.getElementById('selectAllUsers');
+  if (selectAll && all.length > 0) {
+    selectAll.checked = selected.length === all.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < all.length;
+  }
+}
+
+function onUserCheckChange() {
+  updateBatchBar();
+}
+
+function toggleSelectAll(checkbox) {
+  document.querySelectorAll('.user-select-cb').forEach(cb => { cb.checked = checkbox.checked; });
+  updateBatchBar();
+}
+
+function clearBatchSelection() {
+  document.querySelectorAll('.user-select-cb').forEach(cb => { cb.checked = false; });
+  const selectAll = document.getElementById('selectAllUsers');
+  if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+  updateBatchBar();
+}
+
+async function batchSetMembership(membershipType) {
+  const ids = getSelectedUserIds();
+  if (ids.length === 0) { showToast('请先勾选用户', 'error'); return; }
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡', vip: 'VIP 卡' };
+  if (!confirm(`确定为已选的 ${ids.length} 个用户批量设置《${typeLabels[membershipType]}》？`)) return;
+  try {
+    const res = await adminFetch('/api/admin/users/batch-membership', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userIds: ids, membershipType })
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(json.msg);
+      clearBatchSelection();
+      loadUsers();
+    } else {
+      showToast(json.error || '批量设置失败', 'error');
+    }
+  } catch (e) {
+    showToast('批量请求异常: ' + e.message, 'error');
+  }
 }
 
 // 邀请码管理
@@ -1045,6 +1121,10 @@ window.deleteInviteCode = deleteInviteCode;
 window.saveUniversalCode = saveUniversalCode;
 window.saveInviteSettings = saveInviteSettings;
 window.copyAllCodes = copyAllCodes;
+window.batchSetMembership = batchSetMembership;
+window.toggleSelectAll = toggleSelectAll;
+window.onUserCheckChange = onUserCheckChange;
+window.clearBatchSelection = clearBatchSelection;
 
 // 启动入口
 if (document.readyState === 'loading') {

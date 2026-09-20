@@ -407,15 +407,30 @@
       <div class="glass-panel">
         <div class="panel-header">
           <h2 class="panel-title"><i class="ri-group-line"></i> 已注册用户列表</h2>
-          <div style="display: flex; gap: 8px;">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <button class="btn btn-primary" style="background: var(--color-primary);" onclick="syncAllEmbyUsers()"><i class="ri-download-cloud-line"></i> 从 Emby 导入全部用户</button>
             <button class="btn btn-secondary" onclick="loadUsers()"><i class="ri-refresh-line"></i> 刷新用户</button>
           </div>
         </div>
+
+        <!-- 批量操作栏（勾选用户后自动显示） -->
+        <div id="batchActionBar" style="display:none; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); border-radius:10px; padding:10px 16px; margin-bottom:12px; display:none; align-items:center; gap:12px; flex-wrap:wrap;">
+          <span id="batchSelectedCount" style="font-size:0.85rem; color:#818cf8; font-weight:600;">已选 0 人</span>
+          <span style="color:rgba(255,255,255,0.15);">|</span>
+          <span style="font-size:0.83rem; color:var(--text-muted);">批量赋予：</span>
+          <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.8rem;" onclick="batchSetMembership('trial_7d')"><i class="ri-timer-line"></i> 7天体验</button>
+          <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.8rem;" onclick="batchSetMembership('monthly')"><i class="ri-calendar-line"></i> 月卡</button>
+          <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.8rem;" onclick="batchSetMembership('quarterly')"><i class="ri-calendar-2-line"></i> 季卡</button>
+          <button class="btn btn-primary" style="padding:4px 12px; font-size:0.8rem;" onclick="batchSetMembership('yearly')"><i class="ri-vip-crown-line"></i> 年卡</button>
+          <button class="btn" style="padding:4px 12px; font-size:0.8rem; background:linear-gradient(135deg,#f59e0b,#f97316); color:#fff; border:none; border-radius:8px; cursor:pointer;" onclick="batchSetMembership('vip')"><i class="ri-vip-diamond-line"></i> VIP 卡</button>
+          <button class="btn btn-danger" style="padding:4px 12px; font-size:0.8rem; margin-left:auto;" onclick="clearBatchSelection()"><i class="ri-close-line"></i> 取消选择</button>
+        </div>
+
         <div class="data-table-container">
           <table class="data-table">
             <thead>
               <tr>
+                <th style="width:36px;"><input type="checkbox" id="selectAllUsers" onchange="toggleSelectAll(this)" title="全选/反选" style="cursor:pointer; width:15px; height:15px;"></th>
                 <th>UID</th>
                 <th>用户名</th>
                 <th>Emby 账号</th>
@@ -428,7 +443,7 @@
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
+              <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
             </tbody>
           </table>
         </div>

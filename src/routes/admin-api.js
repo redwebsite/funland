@@ -500,18 +500,18 @@ router.delete('/invite-codes/:id', (req, res) => {
   res.json({ success: true, msg: '邀请码已删除' });
 });
 
-// 21. 管理员直接设置用户会员（不需要邀请码）
-router.post('/users/:id/membership', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ success: false, error: '无效用户 ID' });
-
-  const { membershipType } = req.body || {};
-  const VALID_TYPES = ['trial_7d', 'monthly', 'quarterly', 'yearly', 'permanent'];
+// 21. 批量设置用户会员（必须在 :id 路由之前注册！）
+router.post('/users/batch-membership', (req, res) => {
+  const { userIds, membershipType } = req.body || {};
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ success: false, error: '请选择至少一个用户' });
+  }
+  const VALID_TYPES = ['trial_7d', 'monthly', 'quarterly', 'yearly', 'vip'];
   if (!VALID_TYPES.includes(membershipType)) {
     return res.status(400).json({ success: false, error: '无效的会员类型' });
   }
 
-  const DAYS = { trial_7d: 7, monthly: 30, quarterly: 90, yearly: 365, permanent: 0 };
+  const DAYS = { trial_7d: 7, monthly: 30, quarterly: 90, yearly: 365, vip: 0 };
   const days = DAYS[membershipType];
   let expiresAt = '';
   if (days > 0) {
@@ -520,8 +520,40 @@ router.post('/users/:id/membership', (req, res) => {
     expiresAt = exp.toISOString();
   }
 
-  dbService.updateUserMembership(id, membershipType === 'permanent' ? 'yearly' : membershipType, expiresAt);
-  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡', permanent: '永久会员' };
+  let successCount = 0;
+  for (const id of userIds) {
+    const numId = parseInt(id, 10);
+    if (!isNaN(numId)) {
+      try { dbService.updateUserMembership(numId, membershipType, expiresAt); successCount++; } catch (e) {}
+    }
+  }
+
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡', vip: 'VIP 卡' };
+  res.json({ success: true, msg: `已批量为 ${successCount} 个用户设置${typeLabels[membershipType]}`, successCount });
+});
+
+// 22. 管理员直接设置单个用户会员（不需要邀请码）
+router.post('/users/:id/membership', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ success: false, error: '无效用户 ID' });
+
+  const { membershipType } = req.body || {};
+  const VALID_TYPES = ['trial_7d', 'monthly', 'quarterly', 'yearly', 'vip'];
+  if (!VALID_TYPES.includes(membershipType)) {
+    return res.status(400).json({ success: false, error: '无效的会员类型' });
+  }
+
+  const DAYS = { trial_7d: 7, monthly: 30, quarterly: 90, yearly: 365, vip: 0 };
+  const days = DAYS[membershipType];
+  let expiresAt = '';
+  if (days > 0) {
+    const exp = new Date();
+    exp.setDate(exp.getDate() + days);
+    expiresAt = exp.toISOString();
+  }
+
+  dbService.updateUserMembership(id, membershipType, expiresAt);
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡', vip: 'VIP 卡' };
   res.json({ success: true, msg: `已为用户设置${typeLabels[membershipType]}`, expiresAt });
 });
 
