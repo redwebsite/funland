@@ -161,19 +161,14 @@ function createEmbyMiddleware() {
     let sourceFilename = (fileInfo && fileInfo.filename) || (mediaMetadata ? mediaMetadata.filename : '');
     let sourceSize = (fileInfo && fileInfo.filesize) || (mediaMetadata ? mediaMetadata.size : 0);
 
-    // 若本地索引尚未收录该文件的完整 SHA1 或真实文件名，利用源盘直链接口快速探测指纹 (仅供沉淀索引与跨号秒传使用，绝不发送给小号客户端播放)
+    // 非阻塞启动 Probe：与 Step 1 用户盘检索并行执行，节省 300-600ms
+    // Probe 仅用于提取 SHA1/真实文件名指纹，其 CDN 链接绝不转发给小号播放
+    let probePromise = null;
     if ((!sourceSha1 || !sourceFilename || sourceFilename.includes('redirect_url')) && sourcePickcode) {
-      try {
-        const probe = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
-        if (probe && probe.success) {
-          if (probe.sha1 && !sourceSha1) sourceSha1 = probe.sha1;
-          if (probe.filename && (!sourceFilename || sourceFilename.includes('redirect_url'))) sourceFilename = probe.filename;
-          dbService.recordFileIndex(sourceSha1 || `SHA1_${sourcePickcode}`, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
-        }
-      } catch (e) {}
+      probePromise = openApi115.getSourceDirectLink(sourcePickcode, clientUa).catch(() => null);
     }
 
-    // 即刻入库已识别的媒体文件（无论 probe 结果如何，确保在文件与 SHA1 库及统计中实时可见）
+    // 即刻入库当前已知元数据（不等 Probe 结果，Probe 命中后会二次更新）
     if (sourceFilename && !sourceFilename.includes('redirect_url')) {
       const indexSha1 = sourceSha1 || (sourcePickcode ? `SHA1_${sourcePickcode}` : `ITEM_${itemId}`);
       dbService.recordFileIndex(indexSha1, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
@@ -227,6 +222,22 @@ function createEmbyMiddleware() {
               console.warn(`⚠️ [Step 1] 小号网盘已匹配到文件，但直链解析失败: ${linkRes.error}`);
             }
           }
+        }
+
+        // Step 2/3 前：等待并行 Probe 更新 sha1/filename
+        // 此时 Step 1 已消耗了 Probe 的大部分时间，await 通常几乎不额外阻塞
+        if (!resolvedDirectUrl && probePromise) {
+          try {
+            const probe = await probePromise;
+            probePromise = null;
+            if (probe && probe.success) {
+              if (probe.sha1 && !sourceSha1) sourceSha1 = probe.sha1;
+              if (probe.filename && (!sourceFilename || sourceFilename.includes('redirect_url'))) {
+                sourceFilename = probe.filename;
+                dbService.recordFileIndex(sourceSha1 || `SHA1_${sourcePickcode}`, sourceFilename, sourceSize, sourcePickcode, sourceFileId, itemId);
+              }
+            }
+          } catch (e) {}
         }
 
         // 3. 小号网盘未持有该资源 -> 触发【秒传转存至小号的秒存目录】

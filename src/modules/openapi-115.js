@@ -624,11 +624,12 @@ class OpenApi115 {
         return null;
       };
 
-      // 渐进式智能轮询：115 接收转存后落盘通常需要 1~3 秒
-      // 分别在 600ms, 1200ms, 1800ms, 2500ms 尝试，只要落盘立即返回
-      const pollDelays = [600, 1200, 1800, 2500];
-      for (const delay of pollDelays) {
-        await new Promise(r => setTimeout(r, delay));
+      // 改进轮询策略：transfer/receive 完成后立即尝试第 1 次，失败才递增退避
+      // 最优路径：文件已落盘 → 0ms 等待直出
+      // 最坏路径：0+400+1000+2500ms = 3900ms（原策略 600+1200+1800+2500 = 6100ms）
+      const pollIntervals = [0, 400, 1000, 2500];
+      for (const ms of pollIntervals) {
+        if (ms > 0) await new Promise(r => setTimeout(r, ms));
         const dirHit = await checkTargetDir();
         if (dirHit) {
           newPickcode = dirHit.pc;
