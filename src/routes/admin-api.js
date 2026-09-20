@@ -456,5 +456,74 @@ router.post('/sync-emby-users', async (req, res) => {
   }
 });
 
+// 18. 邀请码列表
+router.get('/invite-codes', (req, res) => {
+  const codes = dbService.getAllInviteCodes();
+  res.json({ success: true, data: codes });
+});
+
+// 19. 批量生成邀请码
+router.post('/invite-codes/generate', (req, res) => {
+  const { type, count = 1, expiresInDays = 0 } = req.body || {};
+  const VALID_TYPES = ['trial_7d', 'monthly', 'quarterly', 'yearly'];
+  if (!VALID_TYPES.includes(type)) {
+    return res.status(400).json({ success: false, error: '无效的邀请码类型，可选: trial_7d, monthly, quarterly, yearly' });
+  }
+  const num = Math.min(Math.max(1, parseInt(count, 10) || 1), 50);
+  const expiresAt = expiresInDays > 0
+    ? new Date(Date.now() + parseInt(expiresInDays, 10) * 86400000).toISOString()
+    : null;
+
+  const generated = [];
+  for (let i = 0; i < num; i++) {
+    // 生成可读性强的邀请码：8位大写字母+数字，格式 XXXX-XXXX
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let raw = '';
+    for (let j = 0; j < 8; j++) raw += chars[Math.floor(Math.random() * chars.length)];
+    const code = `${raw.slice(0,4)}-${raw.slice(4)}`;
+    try {
+      dbService.createInviteCode(code, type, expiresAt);
+      generated.push(code);
+    } catch (e) {
+      // 极小概率碰撞，跳过
+    }
+  }
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡' };
+  res.json({ success: true, msg: `成功生成 ${generated.length} 个${typeLabels[type]}邀请码`, data: generated });
+});
+
+// 20. 吊销/删除邀请码
+router.delete('/invite-codes/:id', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ success: false, error: '无效 ID' });
+  dbService.deleteInviteCode(id);
+  res.json({ success: true, msg: '邀请码已删除' });
+});
+
+// 21. 管理员直接设置用户会员（不需要邀请码）
+router.post('/users/:id/membership', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ success: false, error: '无效用户 ID' });
+
+  const { membershipType } = req.body || {};
+  const VALID_TYPES = ['trial_7d', 'monthly', 'quarterly', 'yearly', 'permanent'];
+  if (!VALID_TYPES.includes(membershipType)) {
+    return res.status(400).json({ success: false, error: '无效的会员类型' });
+  }
+
+  const DAYS = { trial_7d: 7, monthly: 30, quarterly: 90, yearly: 365, permanent: 0 };
+  const days = DAYS[membershipType];
+  let expiresAt = '';
+  if (days > 0) {
+    const exp = new Date();
+    exp.setDate(exp.getDate() + days);
+    expiresAt = exp.toISOString();
+  }
+
+  dbService.updateUserMembership(id, membershipType === 'permanent' ? 'yearly' : membershipType, expiresAt);
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡', permanent: '永久会员' };
+  res.json({ success: true, msg: `已为用户设置${typeLabels[membershipType]}`, expiresAt });
+});
+
 module.exports = router;
 

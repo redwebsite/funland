@@ -388,10 +388,18 @@
             </div>
           </div>
           <div class="auth-field">
-            <label class="field-label">密码 <span style="color:var(--text-muted);font-weight:400;font-size:0.78rem;">（Emby 无密码可留空）</span></label>
+            <label class="field-label">密码 <span style="color:var(--text-muted);font-weight:400;font-size:0.78rem;">(Emby 无密码可留空)</span></label>
             <div class="field-input-wrap">
               <i class="ri-lock-line field-icon"></i>
               <input type="password" id="authPassword" placeholder="••••••••" class="field-input">
+            </div>
+          </div>
+          <!-- 邀请码输入（仅注册模式且需要邀请码时显示） -->
+          <div class="auth-field" id="inviteCodeField" style="display:none;">
+            <label class="field-label">邀请码 <span style="color:var(--text-muted);font-weight:400;font-size:0.78rem;">(必填)</span></label>
+            <div class="field-input-wrap">
+              <i class="ri-ticket-2-line field-icon"></i>
+              <input type="text" id="authInviteCode" placeholder="XXXX-XXXX" class="field-input" style="text-transform:uppercase;letter-spacing:0.05em;">
             </div>
           </div>
           <button type="submit" id="btnAuthSubmit" class="btn-primary-full">
@@ -399,11 +407,19 @@
           </button>
         </div>
       </form>
+
+      <!-- 会员过期提示 -->
+      <div id="membershipExpiredSection" style="display:none; text-align:center; padding:18px 10px;">
+        <i class="ri-time-line" style="font-size:2.5rem; color:#f59e0b; display:block; margin-bottom:10px;"></i>
+        <div style="font-size:1.05rem; font-weight:700; color:#f59e0b; margin-bottom:8px;">会员卡已过期</div>
+        <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.6; margin-bottom:20px;">请联系管理员续期，续期后即可正常使用。</p>
+        <button type="button" onclick="closeAuthModal()" class="btn-ghost-full">关闭</button>
+      </div>
     </div>
   </div>
 
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="app.js?v=2.1.2"></script>
+  <script src="app.js?v=2.2.0"></script>
 </body>
 </html>

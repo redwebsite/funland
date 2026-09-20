@@ -56,6 +56,7 @@ router.get('/user/reg-info', (req, res) => {
   const maxLimit = parseInt(dbService.getSetting('max_users_limit', '200'), 10);
   const currentCount = dbService.getUserCount();
   const remaining = Math.max(0, maxLimit - currentCount);
+  const inviteCodeRequired = dbService.getSetting('invite_code_required', 'true') === 'true';
 
   res.json({
     success: true,
@@ -65,6 +66,7 @@ router.get('/user/reg-info', (req, res) => {
       currentUsers: currentCount,
       maxUsersLimit: maxLimit,
       remainingSlots: remaining,
+      inviteCodeRequired,
       statusText: !allowReg 
         ? '管理员已关闭新用户注册' 
         : (remaining <= 0 ? `注册名额已满（上限 ${maxLimit} 人）` : `开放注册中（剩余名额: ${remaining}/${maxLimit}）`)
@@ -88,12 +90,62 @@ router.post('/user/register', async (req, res) => {
 
   const rawUsername = req.body && req.body.username != null ? String(req.body.username).trim() : '';
   const rawPassword = req.body && req.body.password != null ? String(req.body.password).trim() : '';
+  const rawInviteCode = req.body && req.body.inviteCode != null ? String(req.body.inviteCode).trim().toUpperCase() : '';
+
   if (!rawUsername) {
     return res.status(400).json({ success: false, error: '请输入有效的用户名' });
   }
   if (!rawPassword || rawPassword.length < 6) {
     return res.status(400).json({ success: false, error: '新账号注册时密码须至少6位' });
   }
+
+  // ── 邀请码验证 ──────────────────────────────
+  const inviteRequired = dbService.getSetting('invite_code_required', 'true') === 'true';
+  let membershipType = '';
+  let membershipExpiresAt = '';
+  let usedCode = '';
+  const MEMBERSHIP_DAYS = { trial_7d: 7, monthly: 30, quarterly: 90, yearly: 365 };
+
+  if (inviteRequired) {
+    if (!rawInviteCode) {
+      return res.status(400).json({ success: false, error: '请输入邀请码' });
+    }
+
+    // 先检查通用邀请码
+    const universalCode = dbService.getSetting('universal_invite_code', '');
+    if (universalCode && rawInviteCode === universalCode.trim().toUpperCase()) {
+      // 通用码 → 季卡（90天）
+      membershipType = 'quarterly';
+      const exp = new Date();
+      exp.setDate(exp.getDate() + 90);
+      membershipExpiresAt = exp.toISOString();
+      usedCode = rawInviteCode;
+    } else {
+      // 查一次性邀请码表
+      const codeRow = dbService.findInviteCode(rawInviteCode);
+      if (!codeRow) {
+        return res.status(400).json({ success: false, error: '邀请码无效，请检查后重试' });
+      }
+      if (codeRow.status === 'used') {
+        return res.status(400).json({ success: false, error: '该邀请码已被使用' });
+      }
+      if (codeRow.status === 'revoked') {
+        return res.status(400).json({ success: false, error: '该邀请码已被管理员吊销' });
+      }
+      // 检查码本身的有效期（即管理员生成后多少天内需被使用）
+      if (codeRow.expires_at && new Date() > new Date(codeRow.expires_at)) {
+        return res.status(400).json({ success: false, error: '该邀请码已过期，请联系管理员获取新码' });
+      }
+      // 计算会员到期时间
+      const days = MEMBERSHIP_DAYS[codeRow.type] || 30;
+      membershipType = codeRow.type;
+      const exp = new Date();
+      exp.setDate(exp.getDate() + days);
+      membershipExpiresAt = exp.toISOString();
+      usedCode = rawInviteCode;
+    }
+  }
+  // ────────────────────────────────────────────
 
   const cleanUsername = rawUsername;
   const cleanPassword = rawPassword;
@@ -103,7 +155,7 @@ router.post('/user/register', async (req, res) => {
     return res.status(400).json({ success: false, error: '该用户名已被占用' });
   }
 
-  // 检查是否开启了 Emby 用户自动同步 (联动 Emby 模式)
+  // 检查是否开启了 Emby 用户自动同步
   const syncEmby = dbService.getSetting('emby_sync_user', 'true') === 'true';
   const templateUserId = dbService.getSetting('emby_template_user_id', '');
   let embyUserId = '';
@@ -126,14 +178,32 @@ router.post('/user/register', async (req, res) => {
   const passwordHash = crypto.createHash('sha256').update(cleanPassword).digest('hex');
   const newId = dbService.createUser(cleanUsername, passwordHash, embyUserId, cleanPassword);
 
+  // 写入会员信息
+  if (membershipType) {
+    if (usedCode && usedCode !== (dbService.getSetting('universal_invite_code', '').trim().toUpperCase())) {
+      // 一次性邀请码：标记已用并写入用户
+      dbService.useInviteCode(usedCode, newId, membershipType, membershipExpiresAt);
+    } else {
+      // 通用码：直接写用户会员字段
+      dbService.updateUserMembership(newId, membershipType, membershipExpiresAt, usedCode);
+    }
+  }
+
+  const typeLabels = { trial_7d: '7天体验卡', monthly: '月卡', quarterly: '季卡', yearly: '年卡' };
+  const typeLabel = typeLabels[membershipType] || '';
+
   res.json({
     success: true,
-    msg: syncEmby ? '注册成功！已在 Emby 同步创建账号，请登录并绑定 115 账号' : '注册成功！请登录并绑定您的 115 账号',
+    msg: syncEmby
+      ? `注册成功！已在 Emby 同步创建账号${typeLabel ? `，已激活${typeLabel}` : ''}，请登录并绑定 115 账号`
+      : `注册成功！${typeLabel ? `已激活${typeLabel}，` : ''}请登录并绑定您的 115 账号`,
     data: {
       id: newId,
       username: cleanUsername,
       embyUserId,
-      cookieStatus: 'unbound'
+      cookieStatus: 'unbound',
+      membershipType,
+      membershipExpiresAt
     }
   });
 });
@@ -201,9 +271,21 @@ router.post('/user/login', async (req, res) => {
       id: user.id,
       username: user.username,
       cookieStatus: user.cookie_status || 'unbound',
-      has115Cookie: Boolean(user.cookie_115)
+      has115Cookie: Boolean(user.cookie_115),
+      membershipType: user.membership_type || '',
+      membershipExpiresAt: user.membership_expires_at || ''
     }
   });
+});
+
+// 1.4 会员状态查询（供前端判断是否过期）
+router.get('/user/membership', (req, res) => {
+  const username = req.query.username || '';
+  if (!username) return res.status(400).json({ success: false, error: '缺少用户名' });
+  const user = dbService.findUserByUsername(username);
+  if (!user) return res.status(404).json({ success: false, error: '用户不存在' });
+  const membership = dbService.checkUserMembership(user.id);
+  res.json({ success: true, ...membership });
 });
 
 

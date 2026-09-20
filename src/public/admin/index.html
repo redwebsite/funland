@@ -47,6 +47,10 @@
         <i class="ri-group-line nav-icon"></i>
         <span>用户管理与配额</span>
       </div>
+      <div class="nav-item" data-tab="invite-codes" onclick="switchTab('invite-codes')">
+        <i class="ri-ticket-2-line nav-icon"></i>
+        <span>邀请码管理</span>
+      </div>
       <div class="nav-item" data-tab="logs" onclick="switchTab('logs')">
         <i class="ri-file-list-3-line nav-icon"></i>
         <span>播放拦截日志</span>
@@ -416,13 +420,106 @@
                 <th>用户名</th>
                 <th>Emby 账号</th>
                 <th>115 网盘状态</th>
+                <th>会员卡</th>
+                <th>到期时间</th>
                 <th>注册时间</th>
                 <th>状态</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
+              <tr><td colspan="9" style="text-align: center; color: var(--text-muted);">暂无注册用户</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 选项卡: 邀请码管理 -->
+    <section id="tab-invite-codes" class="tab-section">
+      <!-- 通用邀请码设置 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><i class="ri-key-2-line"></i> 通用邀请码 &amp; 开关</h2>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">通用邀请码（可重复使用）</label>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <input type="text" id="cfgUniversalCode" class="form-input" placeholder="留空则禁用通用码" style="flex:1; text-transform:uppercase; letter-spacing:0.05em;">
+              <button class="btn btn-primary" onclick="saveUniversalCode()"><i class="ri-save-line"></i> 保存</button>
+            </div>
+            <small style="color:var(--text-muted); font-size:0.78rem; display:block; margin-top:4px;">用此码注册的用户将获得 90 天季卡会员资格</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">邀请码开关</label>
+            <select class="form-select" id="cfgInviteRequired">
+              <option value="true">✅ 开启邀请码验证（注册必填邀请码）</option>
+              <option value="false">⛔ 关闭邀请码验证（无需邀请码即可注册）</option>
+            </select>
+            <div style="margin-top:10px;">
+              <button class="btn btn-primary" onclick="saveInviteSettings()"><i class="ri-save-line"></i> 保存设置</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 生成邀请码 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><i class="ri-add-circle-line"></i> 生成邀请码</h2>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">会员卡类型</label>
+            <select class="form-select" id="genCodeType">
+              <option value="trial_7d">7天体验卡</option>
+              <option value="monthly">月卡（30天）</option>
+              <option value="quarterly" selected>季卡（90天）</option>
+              <option value="yearly">年卡（365天）</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">生成数量（1~50）</label>
+            <input type="number" class="form-input" id="genCodeCount" min="1" max="50" value="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">邀请码使用有效期（天，0=永不过期）</label>
+            <input type="number" class="form-input" id="genCodeExpiry" min="0" max="365" value="0">
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:10px;" onclick="generateInviteCodes()"><i class="ri-magic-line"></i> 生成邀请码</button>
+        <div id="generatedCodesResult" style="display:none; margin-top:16px;">
+          <div class="panel-header" style="margin-bottom:10px;">
+            <span id="generatedCodesTitle" style="font-weight:600; color:#a78bfa;"></span>
+            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.78rem;" onclick="copyAllCodes()"><i class="ri-file-copy-line"></i> 全部复制</button>
+          </div>
+          <div id="generatedCodesList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+        </div>
+      </div>
+
+      <!-- 邀请码列表 -->
+      <div class="glass-panel">
+        <div class="panel-header">
+          <h2 class="panel-title"><i class="ri-list-check-2"></i> 邀请码列表</h2>
+          <button class="btn btn-secondary" onclick="loadInviteCodes()"><i class="ri-refresh-line"></i> 刷新</button>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>邀请码</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>使用者 UID</th>
+                <th>生成时间</th>
+                <th>使用时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="inviteCodesTableBody">
+              <tr><td colspan="8" style="text-align:center; color:var(--text-muted);">暂无邀请码</td></tr>
             </tbody>
           </table>
         </div>

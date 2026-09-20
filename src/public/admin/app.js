@@ -191,7 +191,8 @@ function switchTab(tab) {
     'cookie-pool': ['115 账号资源池', '管理系统兜底源盘与秒传使用的 115 高级账号'],
     cache: ['滑动过期缓存', '查看当前 30 分钟活动直链，验证滑动续期与命中情况'],
     files: ['文件与 SHA1 库', '本地已索引的媒体文件、SHA1 指纹与播放热度'],
-    users: ['用户管理与配额', '配置开放自主注册开关、最大注册人数上限并管理用户账号'],
+    users: ['用户管理与配额', '配置开放自主注册开关、最大注册人数上限并管理用户账号与会员卡'],
+    'invite-codes': ['邀请码管理', '配置通用邀请码、生成一次性体验卡/月卡/季卡/年卡并管理已发布的邀请码'],
     logs: ['播放拦截日志', '查看实时捕获的 Emby 播放请求流与 302 调度链路']
   };
 
@@ -218,6 +219,7 @@ function refreshCurrentTab() {
   else if (currentTab === 'cache') loadCache();
   else if (currentTab === 'files') loadFiles();
   else if (currentTab === 'users') loadUsers();
+  else if (currentTab === 'invite-codes') loadInviteCodes();
   else if (currentTab === 'logs') loadLogs();
 }
 
@@ -724,30 +726,39 @@ async function loadUsers() {
     tbody.innerHTML = '';
 
     if (!usersJson.data || usersJson.data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无注册用户</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无注册用户</td></tr>';
       return;
     }
+
+    const typeLabels = { trial_7d: '7天体验', monthly: '月卡', quarterly: '季卡', yearly: '年卡' };
 
     usersJson.data.forEach(user => {
       const tr = document.createElement('tr');
       const isDisabled = user.cookie_status === 'disabled';
       const hasEmby = Boolean(user.emby_user_id);
+      const mType = user.membership_type || '';
+      const mExp = user.membership_expires_at || '';
+      const isExpired = mExp && new Date() > new Date(mExp);
+      const mLabel = typeLabels[mType] || (mType === 'permanent' ? '永久' : (mType ? mType : '未设置'));
+      const mBadgeClass = !mType ? 'badge-fallback' : (isExpired ? 'badge-fallback' : 'badge-step1');
+      const expDisplay = !mExp ? (mType ? '永久' : '—') : (isExpired
+        ? `<span style="color:#f87171;">${new Date(mExp).toLocaleDateString()} 已过期</span>`
+        : new Date(mExp).toLocaleDateString());
 
       tr.innerHTML = `
         <td>#${user.id}</td>
         <td><strong>${escapeHtml(user.username)}</strong></td>
-        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback" title="该用户在 Emby 服务端不存在或尚未关联">未关联</span>`}</td>
+        <td>${hasEmby ? `<span class="badge badge-step2" title="Emby ID: ${escapeHtml(user.emby_user_id)}">✅ 已关联</span>` : `<span class="badge badge-fallback">未关联</span>`}</td>
         <td><span class="badge ${user.cookie_status === 'active' ? 'badge-step1' : 'badge-fallback'}">${escapeHtml(user.cookie_status || '未绑定')}</span></td>
+        <td><span class="badge ${mBadgeClass}">${escapeHtml(mLabel)}</span></td>
+        <td style="font-size:0.8rem;">${expDisplay}</td>
         <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : '—'}</td>
         <td><span class="badge ${isDisabled ? 'badge-fallback' : 'badge-step2'}">${isDisabled ? '已封禁' : '正常'}</span></td>
-        <td style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <td style="display: flex; gap: 6px; flex-wrap: wrap;">
           ${!hasEmby ? `<button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="syncUserToEmby(${user.id}, '${escapeHtml(user.username)}')">同步至 Emby</button>` : ''}
-          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">
-            ${isDisabled ? '解封' : '封禁'}
-          </button>
-          <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">
-            删除
-          </button>
+          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="setUserMembership(${user.id}, '${escapeHtml(user.username)}')"><i class="ri-vip-crown-line"></i> 会员</button>
+          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="toggleUser(${user.id})">${isDisabled ? '解封' : '封禁'}</button>
+          <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem;" onclick="deleteUserAccount(${user.id})">删除</button>
         </td>
       `;
       tbody.appendChild(tr);
@@ -832,6 +843,151 @@ async function deleteUserAccount(id) {
   }
 }
 
+// 设置用户会员
+function setUserMembership(id, username) {
+  const type = prompt(
+    `请选择会员卡类型（输入数字）：\n1. 7天体验卡\n2. 月卡 (30天)\n3. 季卡 (90天)\n4. 年卡 (365天)\n5. 永久会员\n\n用户: ${username}`
+  );
+  if (!type) return;
+  const typeMap = { '1': 'trial_7d', '2': 'monthly', '3': 'quarterly', '4': 'yearly', '5': 'permanent' };
+  const membershipType = typeMap[type.trim()];
+  if (!membershipType) { showToast('输入无效，请输入1~5', 'error'); return; }
+  adminFetch(`/api/admin/users/${id}/membership`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ membershipType })
+  }).then(r => r.json()).then(json => {
+    if (json.success) { showToast(json.msg); loadUsers(); }
+    else showToast(json.error || '设置失败', 'error');
+  }).catch(e => showToast(e.message, 'error'));
+}
+
+// 邀请码管理
+async function loadInviteCodes() {
+  try {
+    const [codesRes, settingsRes] = await Promise.all([
+      adminFetch('/api/admin/invite-codes?t=' + Date.now()),
+      adminFetch('/api/admin/settings?t=' + Date.now())
+    ]);
+    if (settingsRes.ok) {
+      const sj = await settingsRes.json();
+      if (sj.success) {
+        const uCode = document.getElementById('cfgUniversalCode');
+        const invReq = document.getElementById('cfgInviteRequired');
+        if (uCode) uCode.value = sj.data.universal_invite_code || '';
+        if (invReq) invReq.value = sj.data.invite_code_required || 'true';
+      }
+    }
+    if (!codesRes.ok) return;
+    const json = await codesRes.json();
+    const tbody = document.getElementById('inviteCodesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    if (!json.data || json.data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:20px;">暂无邀请码</td></tr>';
+      return;
+    }
+    const typeLabels = { trial_7d: '7天体验', monthly: '月卡', quarterly: '季卡', yearly: '年卡' };
+    const statusMap = { unused: '未使用', used: '已使用', revoked: '已吊销' };
+    const statusColors = { unused: 'badge-step1', used: 'badge-step2', revoked: 'badge-fallback' };
+    json.data.forEach(code => {
+      const isExpiredCode = code.expires_at && new Date() > new Date(code.expires_at);
+      const statusLabel = (isExpiredCode && code.status === 'unused') ? '已过期' : (statusMap[code.status] || code.status);
+      const statusColor = (isExpiredCode && code.status === 'unused') ? 'badge-fallback' : (statusColors[code.status] || 'badge-fallback');
+      const tr = document.createElement('tr');
+      const codeStr = escapeHtml(code.code);
+      tr.innerHTML = `
+        <td>#${code.id}</td>
+        <td><code style="font-size:0.9rem;letter-spacing:0.05em;color:#a78bfa;cursor:pointer;" onclick="navigator.clipboard.writeText('${codeStr}').then(()=>showToast('已复制'))">${codeStr}</code></td>
+        <td><span class="badge badge-step2">${typeLabels[code.type] || code.type}</span></td>
+        <td><span class="badge ${statusColor}">${statusLabel}</span></td>
+        <td>${code.used_by_user_id ? '#' + code.used_by_user_id : '—'}</td>
+        <td style="font-size:0.8rem;">${code.created_at ? new Date(code.created_at).toLocaleDateString() : '—'}</td>
+        <td style="font-size:0.8rem;">${code.used_at ? new Date(code.used_at).toLocaleDateString() : '—'}</td>
+        <td><button class="btn btn-danger" style="padding:4px 8px;font-size:0.75rem;" onclick="deleteInviteCode(${code.id})">删除</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    showToast('加载邀请码失败: ' + e.message, 'error');
+  }
+}
+
+async function generateInviteCodes() {
+  const type = document.getElementById('genCodeType').value;
+  const count = parseInt(document.getElementById('genCodeCount').value, 10) || 1;
+  const expiresInDays = parseInt(document.getElementById('genCodeExpiry').value, 10) || 0;
+  try {
+    const res = await adminFetch('/api/admin/invite-codes/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, count, expiresInDays })
+    });
+    const json = await res.json();
+    if (json.success) {
+      showToast(json.msg);
+      const resultDiv = document.getElementById('generatedCodesResult');
+      const titleEl = document.getElementById('generatedCodesTitle');
+      const listEl = document.getElementById('generatedCodesList');
+      if (resultDiv && titleEl && listEl) {
+        titleEl.textContent = json.msg;
+        listEl.innerHTML = json.data.map(c =>
+          `<span onclick="navigator.clipboard.writeText('${c}').then(()=>showToast('已复制 ${c}'))" style="background:rgba(167,139,250,0.15);border:1px solid rgba(167,139,250,0.3);border-radius:6px;padding:6px 12px;font-family:monospace;font-size:0.9rem;cursor:pointer;color:#a78bfa;letter-spacing:0.05em;">${c}</span>`
+        ).join('');
+        resultDiv.style.display = 'block';
+      }
+      loadInviteCodes();
+    } else {
+      showToast(json.error || '生成失败', 'error');
+    }
+  } catch (e) {
+    showToast('生成异常: ' + e.message, 'error');
+  }
+}
+
+async function deleteInviteCode(id) {
+  if (!confirm('确定删除该邀请码？')) return;
+  try {
+    const res = await adminFetch(`/api/admin/invite-codes/${id}`, { method: 'DELETE' });
+    const json = await res.json();
+    if (json.success) { showToast(json.msg); loadInviteCodes(); }
+    else showToast(json.error || '删除失败', 'error');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function saveUniversalCode() {
+  const code = (document.getElementById('cfgUniversalCode') ? document.getElementById('cfgUniversalCode').value : '').trim().toUpperCase();
+  try {
+    const res = await adminFetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { universal_invite_code: code } })
+    });
+    const json = await res.json();
+    if (json.success) showToast(code ? `通用邀请码已设为: ${code}` : '通用邀请码已禁用');
+    else showToast(json.error || '保存失败', 'error');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+async function saveInviteSettings() {
+  const invite_code_required = document.getElementById('cfgInviteRequired') ? document.getElementById('cfgInviteRequired').value : 'true';
+  try {
+    const res = await adminFetch('/api/admin/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { invite_code_required } })
+    });
+    const json = await res.json();
+    if (json.success) showToast('邀请码设置已保存！');
+    else showToast(json.error || '保存失败', 'error');
+  } catch (e) { showToast(e.message, 'error'); }
+}
+
+function copyAllCodes() {
+  const codes = Array.from(document.querySelectorAll('#generatedCodesList span')).map(el => el.textContent).join('\n');
+  navigator.clipboard.writeText(codes).then(() => showToast('已全部复制到剪贴板'));
+}
+
 // 工具函数
 function showToast(msg, type = 'info') {
   const container = document.getElementById('toastContainer');
@@ -879,6 +1035,16 @@ window.loadLogs = loadLogs;
 window.saveRegSettings = saveRegSettings;
 window.toggleUser = toggleUser;
 window.deleteUserAccount = deleteUserAccount;
+window.syncUserToEmby = syncUserToEmby;
+window.syncAllEmbyUsers = syncAllEmbyUsers;
+window.setUserMembership = setUserMembership;
+window.loadUsers = loadUsers;
+window.loadInviteCodes = loadInviteCodes;
+window.generateInviteCodes = generateInviteCodes;
+window.deleteInviteCode = deleteInviteCode;
+window.saveUniversalCode = saveUniversalCode;
+window.saveInviteSettings = saveInviteSettings;
+window.copyAllCodes = copyAllCodes;
 
 // 启动入口
 if (document.readyState === 'loading') {

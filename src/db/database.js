@@ -79,6 +79,17 @@ function initTables() {
       redirect_url TEXT,
       created_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS invite_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT UNIQUE NOT NULL,
+      type TEXT NOT NULL,
+      status TEXT DEFAULT 'unused',
+      used_by_user_id INTEGER,
+      expires_at TEXT,
+      created_at TEXT,
+      used_at TEXT
+    );
   `);
 
   // 默认系统配置检查
@@ -88,15 +99,17 @@ function initTables() {
   const defaults = [
     { key: 'emby_upstream_url', value: config.emby.upstreamUrl },
     { key: 'emby_api_key', value: config.emby.apiKey },
-    { key: 'acceleration_mode', value: 'PRO' }, // 'PRO' (3级智能加速) 或 'NORMAL' (仅源盘直链)
+    { key: 'acceleration_mode', value: 'PRO' },
     { key: 'cache_ttl_seconds', value: String(config.cache.ttlSeconds) },
-    { key: 'allow_registration', value: 'true' }, // 新用户自主注册开关
-    { key: 'max_users_limit', value: '200' },      // 最大注册人数上限 (例如 200 人)
-    { key: 'emby_sync_user', value: 'true' },      // 是否自动同步注册 Emby 账号
-    { key: 'emby_template_user_id', value: '' },   // 模板用户 ID
-    { key: 'emby_template_user_name', value: '' },  // 模板用户名称
-    { key: 'allow_master_direct_fallback', value: 'false' }, // 严格隔离大号风险，默认禁止大号直链穿透给小号
-    { key: 'allow_master_for_guests', value: 'false' }       // 游客默认走本地回源
+    { key: 'allow_registration', value: 'true' },
+    { key: 'max_users_limit', value: '200' },
+    { key: 'emby_sync_user', value: 'true' },
+    { key: 'emby_template_user_id', value: '' },
+    { key: 'emby_template_user_name', value: '' },
+    { key: 'allow_master_direct_fallback', value: 'false' },
+    { key: 'allow_master_for_guests', value: 'false' },
+    { key: 'invite_code_required', value: 'true' },   // 注册是否必须邀请码
+    { key: 'universal_invite_code', value: '' }        // 通用邀请码（空=禁用）
   ];
 
   for (const item of defaults) {
@@ -107,18 +120,14 @@ function initTables() {
   }
 
   // 增量字段迁移
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN save_dir_115 TEXT DEFAULT '/EmbyCache';");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN uid_115 TEXT DEFAULT '';");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT '';");
-  } catch (e) {}
-  try {
-    db.exec("ALTER TABLE users ADD COLUMN save_cid_115 TEXT DEFAULT '';");
-  } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN save_dir_115 TEXT DEFAULT '/EmbyCache';"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN uid_115 TEXT DEFAULT '';"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN plain_password TEXT DEFAULT '';"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN save_cid_115 TEXT DEFAULT '';"); } catch (e) {}
+  // 邀请码与会员字段
+  try { db.exec("ALTER TABLE users ADD COLUMN invite_code TEXT DEFAULT '';"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN membership_type TEXT DEFAULT '';"); } catch (e) {}
+  try { db.exec("ALTER TABLE users ADD COLUMN membership_expires_at TEXT DEFAULT '';"); } catch (e) {}
 
   console.log('✅ [DB] SQLite 数据库及数据表初始化完成');
 }
@@ -237,7 +246,52 @@ const dbService = {
     }
   },
   getAllUsers() {
-    return db.prepare("SELECT id, username, emby_user_id, cookie_status, uid_115, save_dir_115, save_cid_115, created_at, updated_at FROM users ORDER BY id DESC").all();
+    return db.prepare("SELECT id, username, emby_user_id, cookie_status, uid_115, save_dir_115, save_cid_115, invite_code, membership_type, membership_expires_at, created_at, updated_at FROM users ORDER BY id DESC").all();
+  },
+
+  // 邀请码管理
+  createInviteCode(code, type, expiresAt = null) {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO invite_codes (code, type, status, expires_at, created_at)
+      VALUES (?, ?, 'unused', ?, ?)
+    `).run(code, type, expiresAt, now);
+  },
+  getAllInviteCodes() {
+    return db.prepare("SELECT * FROM invite_codes ORDER BY id DESC").all();
+  },
+  findInviteCode(code) {
+    if (!code) return null;
+    return db.prepare("SELECT * FROM invite_codes WHERE code = ?").get(code.trim().toUpperCase());
+  },
+  revokeInviteCode(id) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE invite_codes SET status = 'revoked', used_at = ? WHERE id = ?").run(now, id);
+  },
+  deleteInviteCode(id) {
+    db.prepare("DELETE FROM invite_codes WHERE id = ?").run(id);
+  },
+  useInviteCode(code, userId, membershipType, membershipExpiresAt) {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE invite_codes SET status = 'used', used_by_user_id = ?, used_at = ? WHERE code = ?").run(userId, now, code.trim().toUpperCase());
+    db.prepare("UPDATE users SET invite_code = ?, membership_type = ?, membership_expires_at = ?, updated_at = ? WHERE id = ?").run(code.trim().toUpperCase(), membershipType, membershipExpiresAt || '', now, userId);
+  },
+  updateUserMembership(userId, membershipType, membershipExpiresAt, code = '') {
+    const now = new Date().toISOString();
+    db.prepare("UPDATE users SET membership_type = ?, membership_expires_at = ?, invite_code = COALESCE(NULLIF(?, ''), invite_code), updated_at = ? WHERE id = ?").run(membershipType, membershipExpiresAt || '', code, now, userId);
+  },
+  checkUserMembership(userId) {
+    const user = db.prepare("SELECT membership_type, membership_expires_at FROM users WHERE id = ?").get(userId);
+    if (!user) return { valid: false, reason: 'user_not_found' };
+    // 无会员记录 → 未设置（兼容旧用户，管理员需手动分配）
+    if (!user.membership_type) return { valid: false, reason: 'no_membership' };
+    // 永久会员（expires_at 为空）
+    if (!user.membership_expires_at) return { valid: true, type: user.membership_type, expiresAt: null };
+    // 检查是否过期
+    const now = new Date();
+    const expiresAt = new Date(user.membership_expires_at);
+    if (now > expiresAt) return { valid: false, reason: 'expired', expiresAt: user.membership_expires_at };
+    return { valid: true, type: user.membership_type, expiresAt: user.membership_expires_at };
   },
 
   // Cookie 资源池 (管理员/源网盘)

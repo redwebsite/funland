@@ -143,16 +143,23 @@ function switchAuthTab(mode) {
   const submitBtn = document.getElementById('btnAuthSubmit');
   const regClosedSection = document.getElementById('regClosedSection');
   const authFieldsGroup = document.getElementById('authFieldsGroup');
+  const inviteCodeField = document.getElementById('inviteCodeField');
+  const membershipExpiredSection = document.getElementById('membershipExpiredSection');
 
   const inputUsername = document.getElementById('authUsername');
   const inputPassword = document.getElementById('authPassword');
+  const inputInviteCode = document.getElementById('authInviteCode');
+
+  // 隐藏会员过期提示
+  if (membershipExpiredSection) membershipExpiredSection.style.display = 'none';
+  if (authFieldsGroup) authFieldsGroup.style.display = 'block';
 
   if (mode === 'login') {
     if (tabLogin) tabLogin.classList.add('active');
     if (tabReg) tabReg.classList.remove('active');
     if (quotaAlert) quotaAlert.style.display = 'none';
     if (regClosedSection) regClosedSection.style.display = 'none';
-    if (authFieldsGroup) authFieldsGroup.style.display = 'block';
+    if (inviteCodeField) inviteCodeField.style.display = 'none';
     if (submitBtn) submitBtn.innerText = '立即登录';
 
     if (inputUsername) {
@@ -181,18 +188,20 @@ function switchAuthTab(mode) {
     // 检查注册是否开放
     const isRegOpen = cachedRegInfo ? cachedRegInfo.allowed : true;
     if (!isRegOpen) {
-      // 注册已关闭状态
       if (quotaAlert) quotaAlert.style.display = 'none';
       if (authFieldsGroup) authFieldsGroup.style.display = 'none';
       if (regClosedSection) regClosedSection.style.display = 'block';
+      if (inviteCodeField) inviteCodeField.style.display = 'none';
     } else {
       if (regClosedSection) regClosedSection.style.display = 'none';
-      if (authFieldsGroup) authFieldsGroup.style.display = 'block';
       if (quotaAlert) quotaAlert.style.display = 'block';
       if (submitBtn) submitBtn.innerText = '立即注册';
       if (cachedRegInfo && document.getElementById('modalQuotaSlots')) {
         document.getElementById('modalQuotaSlots').innerText = cachedRegInfo.remainingSlots;
       }
+      // 根据服务器配置决定是否显示邀请码输入框
+      const needInvite = cachedRegInfo ? cachedRegInfo.inviteCodeRequired : true;
+      if (inviteCodeField) inviteCodeField.style.display = needInvite ? 'block' : 'none';
     }
   }
 }
@@ -201,45 +210,71 @@ async function handleAuthSubmit(e) {
   e.preventDefault();
   const username = document.getElementById('authUsername').value.trim();
   const password = document.getElementById('authPassword').value;
+  const inviteCodeInput = document.getElementById('authInviteCode');
+  const inviteCode = inviteCodeInput ? inviteCodeInput.value.trim().toUpperCase() : '';
 
   if (currentAuthMode === 'register') {
     if (!username || username.length < 1) {
-      alert('请输入有效的用户名');
+      showToast('请输入有效的用户名', 'error');
       return;
     }
     if (!password || password.length < 6) {
-      alert('注册时密码须至少 6 位');
+      showToast('注册时密码须至少6 位', 'error');
+      return;
+    }
+    const needInvite = cachedRegInfo ? cachedRegInfo.inviteCodeRequired : true;
+    if (needInvite && !inviteCode) {
+      showToast('请输入邀请码', 'error');
       return;
     }
   } else {
     if (!username) {
-      alert('请输入用户名');
+      showToast('请输入用户名', 'error');
       return;
     }
   }
 
   const url = currentAuthMode === 'login' ? '/api/user/login' : '/api/user/register';
+  const body = currentAuthMode === 'login'
+    ? { username, password }
+    : { username, password, inviteCode };
+
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(body)
     });
     const json = await res.json();
 
     if (json.success) {
-      // 静默登录成功：直接关闭弹窗，更新 UI，无需弹窗提示
       currentUser = username;
       localStorage.setItem('funland_user', username);
+      // 登录后检查会员状态
+      if (currentAuthMode === 'login') {
+        const membership = json.data;
+        if (membership && membership.membershipType) {
+          const now = new Date();
+          const exp = membership.membershipExpiresAt ? new Date(membership.membershipExpiresAt) : null;
+          if (exp && now > exp) {
+            // 会员已过期：展示过期提示，不进入主界面
+            const authFieldsGroup = document.getElementById('authFieldsGroup');
+            const membershipExpiredSection = document.getElementById('membershipExpiredSection');
+            if (authFieldsGroup) authFieldsGroup.style.display = 'none';
+            if (membershipExpiredSection) membershipExpiredSection.style.display = 'block';
+            return;
+          }
+        }
+      }
       closeAuthModal();
       updateUserUi();
       loadRegInfo();
       checkUserDriveStatus();
     } else {
-      alert(json.error || '操作失败');
+      showToast(json.error || '操作失败', 'error');
     }
   } catch (err) {
-    alert('请求异常: ' + err.message);
+    showToast('请求异常: ' + err.message, 'error');
   }
 }
 
