@@ -209,9 +209,10 @@
               <label class="form-label">游客/未绑定用户兜底策略</label>
               <select class="form-select" id="cfgMasterForGuests">
                 <option value="false">🏠 本地回源模式 (推荐：未绑定 115 的用户走 Emby 原始串流)</option>
+                <option value="block">🚫 拒绝播放 (强制要求所有用户绑定 115 才能播放，不消耗服务器带宽)</option>
                 <option value="true">⚡ 允许源盘直连 (直接向游客发放源盘直链，极易消耗大号配额)</option>
               </select>
-              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">建议保持本地回源，引导新用户在门户自备 115 账号绑定</small>
+              <small style="color: var(--text-muted); font-size: 0.78rem; display: block; margin-top: 4px;">「拒绝播放」模式下，未绑定 115 的用户收到 403 错误，引导其前往 Portal 自行绑定账号</small>
             </div>
           </div>
           <button type="submit" class="btn btn-primary" style="margin-top: 10px;"><i class="ri-save-line"></i> 保存 Emby 与安全隔离配置</button>

@@ -354,8 +354,21 @@ function createEmbyMiddleware() {
       // ==========================================
       // 核心加速路由 B：未绑定 115 的用户 (游客 / 本地回源模式)
       // ==========================================
-      const allowMasterForGuests = dbService.getSetting('allow_master_for_guests', 'false') === 'true';
-      if (allowMasterForGuests && sourcePickcode) {
+      const guestPolicy = dbService.getSetting('allow_master_for_guests', 'false');
+
+      if (guestPolicy === 'block') {
+        // 强制拦截：未绑定 115 则拒绝播放
+        console.log(`🚫 [拦截拒绝] 用户 ${currentUserName} 未绑定 115 账号，拒绝播放请求`);
+        dbService.logPlayback(itemId, sourceFilename || 'Media Stream', currentUserName, clientIp, 'BLOCKED_NO_115', 'REJECTED');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(403).json({
+          error: '播放被拒绝',
+          message: '请先在 Portal 绑定个人 115 账号后再播放内容'
+        });
+      }
+
+      if (guestPolicy === 'true' && sourcePickcode) {
         const masterLink = await openApi115.getSourceDirectLink(sourcePickcode, clientUa);
         if (masterLink.success) {
           resolvedDirectUrl = masterLink.downloadUrl;
