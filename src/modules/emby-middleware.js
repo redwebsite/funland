@@ -118,6 +118,21 @@ function createEmbyMiddleware() {
 
     console.log(`🎬 [Emby Proxy 8097] 拦截到播放流请求: ItemId=${itemId}, Path=${req.originalUrl || req.url}, 用户=${currentUserName} (${userId}), UA="${clientUa.substring(0, 50)}", IP=${clientIp}`);
 
+    // 0. 拦截弹出：block 模式下未绑定 115 的用户直接拒绝（必须在缓存检查之前）
+    if (!userCookie) {
+      const guestPolicyEarly = dbService.getSetting('allow_master_for_guests', 'false');
+      if (guestPolicyEarly === 'block') {
+        console.log(`🚫 [拦截拒绝] 用户 ${currentUserName} 未绑定 115 账号，拒绝播放请求 (stream)`);
+        dbService.logPlayback(itemId, 'Media Stream', currentUserName, clientIp, 'BLOCKED_NO_115', 'REJECTED');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        return res.status(403).json({
+          error: '播放被拒绝',
+          message: '请先在 Portal 绑定个人 115 账号后再播放内容'
+        });
+      }
+    }
+
     // 1. 检查 30 分钟滑动过期缓存 (结合 UA 指纹，杜绝签名不匹配导致 115 CDN 403)
     const cacheKey = cacheScheduler.makeKey('stream:direct:v3', itemId, currentUserName, clientUa);
     const cachedDirectUrl = cacheScheduler.get(cacheKey, true); // true = 命中时自动顺延 30 分钟
@@ -469,8 +484,40 @@ function createEmbyMiddleware() {
     next();
   });
 
-  // 挂载核心拦截路由规则 (完美兼容 /emby/Videos/... 与 /Videos/... 各类客户端规范)
+  // 拦截核心路由规则 (完美兼容 /emby/Videos/... 与 /Videos/... 各类客户端规范)
   const STREAM_PATH_REGEX = /^(?:\/emby)?\/(?:videos\/([^\/\?]+)\/(stream|original|master\.m3u8|main\.m3u8)(?:\.[a-zA-Z0-9]+)?|items\/([^\/\?]+)\/download)/i;
+
+  // PlaybackInfo 拦截：block 模式下禁止未绑定用户获取流地址
+  const PLAYBACK_INFO_REGEX = /^(?:\/emby)?\/items\/([^\/\?]+)\/playbackinfo$/i;
+  router.post(PLAYBACK_INFO_REGEX, (req, res, next) => {
+    const guestPolicy = dbService.getSetting('allow_master_for_guests', 'false');
+    if (guestPolicy !== 'block') return next();
+
+    // 尝试识别用户
+    const clientToken = req.query.api_key || req.headers['x-emby-token'] || req.query['X-Emby-Token'] || '';
+    let userId = req.query.UserId || req.query.userId || req.headers['x-emby-user-id'] || '';
+    if (!userId && clientToken && tokenToUserMap.has(clientToken)) {
+      userId = tokenToUserMap.get(clientToken);
+    }
+    if (!userId) userId = 'anonymous';
+
+    const currentUser = dbService.findUserByUsername(userId) ||
+                        dbService.findUserByEmbyUserId(userId) ||
+                        (userId !== 'anonymous' && /^\d+$/.test(userId) ? dbService.findUserById(userId) : null);
+    const userCookie = currentUser && currentUser.cookie_status === 'active' ? currentUser.cookie_115 : null;
+    const currentUserName = currentUser ? currentUser.username : (userId || 'anonymous');
+
+    if (!userCookie) {
+      console.log(`🚫 [拦截拒绝] 用户 ${currentUserName} 未绑定 115，拒绝 PlaybackInfo 请求`);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(403).json({
+        error: '播放被拒绝',
+        message: '请先在 Portal 绑定个人 115 账号后再播放内容'
+      });
+    }
+    next();
+  });
 
   router.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
