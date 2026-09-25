@@ -110,16 +110,16 @@
 
           <!-- 绑定方式 Tab -->
           <div class="sub-tabs">
-            <button class="sub-tab-btn active" id="btnTabQr" onclick="switchBindTab('qr')">
-              <i class="ri-qr-code-line"></i> 扫码登录
-            </button>
-            <button class="sub-tab-btn" id="btnTabCookie" onclick="switchBindTab('cookie')">
+            <button class="sub-tab-btn active" id="btnTabCookie" onclick="switchBindTab('cookie')">
               <i class="ri-key-2-line"></i> Cookie 导入
+            </button>
+            <button class="sub-tab-btn" id="btnTabQr" onclick="switchBindTab('qr')">
+              <i class="ri-qr-code-line"></i> 扫码登录
             </button>
           </div>
 
           <!-- 扫码面板 -->
-          <div id="panelQr">
+          <div id="panelQr" style="display: none;">
             <div class="qr-container">
               <img id="qrImg" class="qr-image" src="" alt="115 扫码授权二维码">
               <div id="qrStatusBadge" class="qr-status-badge">
@@ -133,7 +133,7 @@
           </div>
 
           <!-- Cookie 导入面板 -->
-          <div id="panelCookie" style="display: none; padding-top: 10px;">
+          <div id="panelCookie" style="display: block; padding-top: 10px;">
             <label class="field-label">115 Cookie 字符串 <span style="color:var(--text-muted); font-weight:400;">(需包含 UID · CID · SEID)</span></label>
             <textarea id="manualCookie" class="field-textarea" rows="5" placeholder="UID=...; CID=...; SEID=..."></textarea>
             <button onclick="submitManualCookie()" class="btn-primary-full" style="margin-top: 12px;">
